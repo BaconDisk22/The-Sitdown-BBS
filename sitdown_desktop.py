@@ -144,8 +144,15 @@ class SitdownApp:
             button(actions, title, fn, color).pack(side="left", padx=(0, 8), pady=4)
         button(self.root, "Refresh USB Ports", self.list_ports, c["panel"]).pack(anchor="w", padx=20)
         label(self.root, "THE WIRE  •  LIVE STATUS", 12, c["highlight"]).pack(anchor="w", padx=20)
-        tk.Label(self.root, textvariable=self.status, bg=c["background"],
-                 fg=c["connected"], font=("Helvetica", 12, "bold")).pack(anchor="w", padx=20)
+        status_row = tk.Frame(self.root, bg=c["background"])
+        status_row.pack(fill="x", padx=20)
+        self.status_dot = tk.Label(status_row, text="●", bg=c["background"],
+                                   fg=c["primary"], font=("Helvetica", 15, "bold"))
+        self.status_dot.pack(side="left", padx=(0, 8))
+        tk.Label(status_row, textvariable=self.status, bg=c["background"],
+                 fg=c["text"], font=("Helvetica", 12, "bold")).pack(side="left")
+        self.status.trace_add("write", self.refresh_status_indicator)
+        self.refresh_status_indicator()
         label(self.root, "NODES OBSERVED IN RADIO TRAFFIC", 10, c["highlight"]).pack(anchor="w", padx=20)
         tk.Label(self.root, textvariable=self.node_count, bg=c["background"], fg=c["text"]).pack(anchor="w", padx=20)
         tk.Label(self.root, textvariable=self.uptime, bg=c["background"], fg=c["text"]).pack(anchor="w", padx=20)
@@ -171,6 +178,17 @@ class SitdownApp:
         self.log(Personality(self.desktop_mouth.get(), self.public_mouth.get(), self.public_profanity.get()).message("welcome"))
         self.log("Pick a radio, or check Demo mode.")
 
+    def refresh_status_indicator(self, *_args):
+        """Indicate process state; never infer a verified radio connection."""
+        state = self.status.get().lower()
+        if "demo" in state or "starting" in state or "retry" in state:
+            color = THEME["highlight"]
+        elif "initialized" in state or "running" in state:
+            color = THEME["connected"]
+        else:
+            color = THEME["primary"]
+        self.status_dot.configure(fg=color)
+
     def show_home(self):
         """Home is the main live dashboard."""
         self.log("HOME: Dashboard is already open.")
@@ -193,7 +211,7 @@ class SitdownApp:
         messagebox.showinfo("About The Sitdown BBS",
                             "THE SITDOWN BBS — North Jersey Communications Division\n"
                             "A Jersey-themed Meshtastic BBS based on TC²-BBS.\n"
-                            "Built for the mesh. Raised in Jersey.\\n\n"
+                            "Built for the mesh. Raised in Jersey.\n\n"
                             "Connection details shown here come from the running app, "
                             "not from promotional demo artwork.")
 
