@@ -81,10 +81,12 @@ class LocalUtilities:
 
     def startup(self):
         """One attempt per process start; disabled by default."""
-        if self.startup_attempted or not self.config.getboolean('startup', 'enabled', fallback=False):
+        if self.startup_attempted:
             return False
-        self.startup_attempted = True
         try:
+            if not self.config.getboolean('startup', 'enabled', fallback=False):
+                return False
+            self.startup_attempted = True
             style = Personality(public_mode=self.config.get('personality', 'public_mode', fallback='clean'),
                                 allow_public_profanity=self.config.getboolean(
                                     'personality', 'allow_public_profanity', fallback=False))

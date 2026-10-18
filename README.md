@@ -1,5 +1,21 @@
 <div align="center">
 
+
+## Jersey desktop and operator desks
+
+The dashboard now has working tab pages for BBS utilities, local mail and boards,
+radio status, full node lookup, settings, and About. Admin announcements and an
+optional startup broadcast use the existing radio connection. Weather works with
+an offline local report; internet weather and MQTT are separately **off by default**.
+
+Read the [configuration and command guide](docs/JERSEY_DESK.md) and
+[upstream audit](docs/UPSTREAM_AUDIT.md). This is a staged change: local utilities,
+opt-in services, then desktop integration. Mac builds are test artifacts until
+validated with a physical radio on an Intel Mac.
+
+![Jersey app icon](docs/images/app-icon.png)
+
+
 # 🤌 THE SITDOWN BBS
 ### 🇮🇹 North Jersey Communications Division 🇮🇹
 
@@ -32,7 +48,7 @@ Think old-school bulletin boards with a North Jersey attitude: diner coffee, Sun
 | 🗺️ **What Exit?** | Channel directory |
 | 📊 **Who's Connected?** | Server utilities and statistics |
 | 🔮 **Jersey Wisdom** | Random fortunes |
-| 🖥️ **The Sitdown Desktop** | Tkinter launcher with server status, searchable logs, and observed-node viewer |
+| 🖥️ **The Sitdown Desktop** | Tabbed desktop with server status, searchable logs, operator desks, and full node lookup |
 | 🧪 **Demo Mode** | Explore desktop controls without connecting or transmitting over radio |
 | 📦 **The Books** | Create a ZIP backup of available local settings and database files |
 
@@ -49,16 +65,16 @@ The desktop launcher includes a few handy tools for keeping tabs on the family b
 | **Find in Log / Find Next** | Search the visible server activity log and jump to matching entries |
 | **Save Log** | Export the visible activity log as a UTF-8 text file for troubleshooting |
 | **Clear Log** | Clear the visible log without stopping the BBS process |
-| **Nodes / Who's Who** | Open a list of node IDs observed during the current session |
+| **Nodes / Who's Who** | Search the entire radio node database by ID or name, with available telemetry |
 | **Refresh USB Ports** | List detected serial devices and fill in the port when exactly one is available |
 | **Restart on crash** | Optionally restart the server process after an unexpected exit with capped exponential backoff |
 | **Radio activity** | Reports incoming Meshtastic messages observed in BBS logs without claiming a permanent connection |
 
-**What's not included yet:** The node viewer shows observed IDs, not a live network directory. Search operates on the visible log only. The dashboard's personality controls are local preferences; they do not yet change radio replies. Two-way radio messaging has been confirmed on an Intel Mac; the latest UI, disconnect recovery, and final release package still need follow-up testing.
+**Validation scope:** The earlier version's two-way TCP radio test is historical evidence only. These staged changes and their packaged app require a fresh Intel Mac/radio test. Node snapshots are not continuous presence checks; backups do not yet support restore.
 
 ### Jersey Mouth Control
 
-Under **The Family Business**, choose **Clean Jersey**, **Jersey Attitude**, or **Full Jersey Mouth** for desktop-generated greetings. Public-radio style is a separate preference, with explicit profanity opt-in. These controls are **not yet connected to the BBS radio reply path**, and they do not rewrite messages from users or emergency/technical notices.
+Home provides **Clean Jersey**, **Jersey Attitude**, and **Full Jersey Mouth** greeting previews. Settings configures the generated startup broadcast greeting, with a separate public-profanity opt-in. Custom announcements, mail, and technical notices remain verbatim.
 
 ## 🤌 The Playbook — radio commands
 
@@ -73,6 +89,10 @@ Send these as **direct messages to the Meshtastic BBS node**.
 | `/fortune` | Get a random fortune |
 | `/tools` | Utilities |
 | `/cancel` | Return to the main menu |
+| `/node <ID or name>` | Full radio node lookup |
+| `/weather` | Offline report or opt-in internet weather |
+| `/wire` | Optional MQTT topic counts |
+| `/announce <channel> <text>` | Administrator-only broadcast |
 
 The original TC²-BBS one-letter menus and quick commands remain available alongside the Jersey shortcuts. More details: [SITDOWN_COMMANDS.md](SITDOWN_COMMANDS.md).
 
@@ -80,11 +100,20 @@ The original TC²-BBS one-letter menus and quick commands remain available along
 
 **THE SITDOWN BBS — North Jersey Communications Division**
 
-The current desktop dashboard uses Italian red and green accents, dark charcoal panels, and readable high-contrast controls. It includes **Start the Sitdown**, **Fuggedaboutit**, **The Playbook**, **The Family Business**, **The Books**, live searchable server logs, log export/clear controls, an observed-node viewer, and a demo mode that does not require a connected radio.
+The current desktop dashboard uses Italian red and green accents, dark charcoal panels, and readable high-contrast controls. It includes **Start the Sitdown**, **Fuggedaboutit**, **The Playbook**, **The Family Business**, **The Books**, live searchable server logs, log export/clear controls, full node lookup, and a demo mode that does not require a connected radio.
 
-**Demonstration data — no live radio connection.** The image below is captured automatically from the actual Tkinter dashboard on an Intel macOS GitHub Actions runner. It uses sample log entries, not real radio traffic. The screenshot is generated after this workflow successfully runs on `main`.
+**Demonstration data — no live radio connection.** The image below is captured automatically from the actual Tkinter dashboard on an Intel macOS GitHub Actions runner. It uses sample log entries, not real radio traffic. These screenshots come from the staged PR’s Intel Mac demo capture.
 
 ![The Sitdown BBS desktop dashboard in demo mode — demonstration data, no radio connection](docs/images/desktop-preview-demo.png)
+
+<details>
+<summary>Operator desks, full node lookup, and opt-in settings (demo screenshots)</summary>
+
+![Announcement desk — demonstration only](docs/images/bbs-preview-demo.png)
+![Full node lookup — demonstration node](docs/images/nodes-preview-demo.png)
+![Startup broadcast settings — disabled by default](docs/images/settings-preview-demo.png)
+
+</details>
 
 [Desktop screenshot automation](https://github.com/BaconDisk22/The-Sitdown-BBS/actions/workflows/readme-desktop-screenshot.yml) · [Intel Mac releases](https://github.com/BaconDisk22/The-Sitdown-BBS/releases)
 

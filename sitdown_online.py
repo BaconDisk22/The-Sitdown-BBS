@@ -19,7 +19,11 @@ class WeatherDesk:
     def report(self):
         c = self.config
         local = c.get('weather', 'local_report', fallback='').strip()
-        if not c.getboolean('weather', 'internet_enabled', fallback=False):
+        try:
+            enabled = c.getboolean('weather', 'internet_enabled', fallback=False)
+        except ValueError:
+            return 'Jersey Weather Desk: invalid internet setting; no request sent.'
+        if not enabled:
             return 'Jersey Weather Desk — local report: ' + local if local else 'Jersey Weather Desk: internet weather is disabled; no local report configured.'
         with self.lock:
             now = self.clock()
@@ -68,11 +72,11 @@ class ActivityCounter:
 
     def start(self, factory=None):
         c = self.config
-        if not c.getboolean('mqtt_monitor', 'enabled', fallback=False):
-            return
         if self.client is not None:
             return
         try:
+            if not c.getboolean('mqtt_monitor', 'enabled', fallback=False):
+                return
             host = c.get('mqtt_monitor', 'host', fallback='').strip()
             self.topic = c.get('mqtt_monitor', 'topic', fallback='').strip()
             if not host or not self.topic:
@@ -140,8 +144,13 @@ class ActivityCounter:
         if self.client is not None:
             try:
                 self.client.disconnect()
-                self.client.loop_stop()
+            except Exception:
+                logging.warning('MQTT disconnect failed.')
             finally:
+                try:
+                    self.client.loop_stop()
+                except Exception:
+                    logging.warning('MQTT loop shutdown failed.')
                 self.client = None
         if not preserve_status:
             self.status = 'Stopped'

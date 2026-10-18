@@ -4,6 +4,10 @@ This supervises the BBS *process*, not the radio link. A running process is
 not proof of a successful radio connection.
 """
 import queue
+import json
+import os
+import secrets
+from sitdown_control import PREFIX
 import re
 import subprocess
 import threading
@@ -15,6 +19,8 @@ READY_PATTERN = re.compile(r"(?:BBS is running on|TC²-BBS is running on)", re.I
 
 class ServerSupervisor:
     def __init__(self, command, cwd, factory=None):
+        self.control_token = secrets.token_hex(24)
+        self.control_prefix = PREFIX + self.control_token + ' '
         self.command = list(command)
         self.cwd = str(cwd)
         self.factory = factory or subprocess.Popen
@@ -35,7 +41,8 @@ class ServerSupervisor:
         self.nodes.clear()
         self.process = self.factory(
             self.command, cwd=self.cwd, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1)
+            env={**os.environ, 'SITDOWN_CONTROL_TOKEN': self.control_token},
+            stderr=subprocess.STDOUT, stdin=subprocess.PIPE, text=True, bufsize=1)
         self.started_at = time.monotonic()
         threading.Thread(target=self._read_output, args=(self.process,), daemon=True).start()
         self.events.put(("state", "Starting BBS process..."))
@@ -45,6 +52,12 @@ class ServerSupervisor:
         try:
             for raw in process.stdout:
                 line = raw.rstrip("\r\n")
+                if line.startswith(self.control_prefix):
+                    try:
+                        self.events.put(('control', json.loads(line[len(self.control_prefix):])))
+                    except ValueError:
+                        self.events.put(('log', 'Invalid desktop event ignored.'))
+                    continue
                 if READY_PATTERN.search(line):
                     self.ready = True
                     self.events.put(("state", "Server initialized (radio link unverified)"))
@@ -60,6 +73,15 @@ class ServerSupervisor:
             self.events.put(("log", f"Log reader stopped: {exc}"))
         finally:
             self.events.put(("reader_done", None))
+
+    def request(self, action, **fields):
+        if not self.running or self.stopping:
+            raise RuntimeError('Start the BBS server first.')
+        try:
+            self.process.stdin.write(json.dumps({'action': action, **fields}) + '\n')
+            self.process.stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise RuntimeError('Server control pipe closed.') from exc
 
     def uptime_seconds(self):
         return int(time.monotonic() - self.started_at) if self.started_at is not None and self.running else 0

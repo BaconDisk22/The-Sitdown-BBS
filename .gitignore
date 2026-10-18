@@ -6,3 +6,7 @@ venv/
 .idea
 config.ini
 fortunes.txt
+
+build/
+dist/
+*.spec

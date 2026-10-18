@@ -14,6 +14,10 @@ other BBS servers listed in the config.ini file.
 
 import logging
 import time
+import queue
+import signal
+import threading
+from sitdown_control import start_reader, snapshot, handle, emit
 
 from config_init import initialize_config, get_interface, init_cli_parser, merge_config
 from db_operations import initialize_database
@@ -81,15 +85,28 @@ def main():
     if js8call_client.db_conn:
         js8call_client.connect()
 
+    requests = start_reader() if args.desktop_control else None
+    stopping = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stopping.set())
     interface.sitdown.mqtt.start()
     interface.sitdown.startup()
 
     try:
-        while True:
-            time.sleep(1)
+        last_snapshot = 0
+        while not stopping.wait(0.25):
+            if requests is not None:
+                try:
+                    emit(handle(interface.sitdown, requests.get_nowait()))
+                except queue.Empty:
+                    pass
+                if time.monotonic() - last_snapshot >= 5:
+                    emit(snapshot(interface.sitdown))
+                    last_snapshot = time.monotonic()
 
     except KeyboardInterrupt:
         logging.info("Shutting down the server...")
+    finally:
+        pub.unsubscribe(receive_packet, system_config['mqtt_topic'])
         interface.sitdown.mqtt.stop()
         interface.close()
         if js8call_client.connected:

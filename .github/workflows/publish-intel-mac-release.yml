@@ -79,6 +79,13 @@ jobs:
             --hidden-import paho.mqtt.client --collect-all meshtastic --collect-all pubsub sitdown_desktop.py
           test -d "dist/The Sitdown BBS.app"
           lipo -archs "dist/The Sitdown BBS.app/Contents/MacOS/The Sitdown BBS" | grep -q x86_64
+      - name: Smoke test the packaged Intel app without radio
+        run: |
+          python - <<'PYTHON'
+          import subprocess
+          subprocess.run(['dist/The Sitdown BBS.app/Contents/MacOS/The Sitdown BBS',
+                          '--sitdown-smoke-test'], check=True, timeout=45)
+          PYTHON
       - name: Build release DMG and checksums
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -86,8 +93,7 @@ jobs:
           mkdir -p dmg-staging
           cp -R "dist/The Sitdown BBS.app" dmg-staging/
           ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "The Sitdown BBS $VERSION" -srcfolder dmg-staging \
-            -ov -format UDZO "The-Sitdown-BBS-Intel-Mac-$VERSION.dmg"
+          bash scripts/create_dmg.sh "The-Sitdown-BBS-Intel-Mac-$VERSION.dmg" "The Sitdown BBS $VERSION"
           shasum -a 256 "The-Sitdown-BBS-Intel-Mac-$VERSION.dmg" > SHA256SUMS.txt
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

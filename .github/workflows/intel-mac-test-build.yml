@@ -47,7 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sitdown-pr-desktop-preview
-          path: docs/images/desktop-preview-demo.png
+          path: docs/images/*preview-demo.png
           if-no-files-found: error
       - name: Generate Jersey app icon
         run: |
@@ -70,13 +70,19 @@ jobs:
             sitdown_desktop.py
           test -d "dist/The Sitdown BBS.app"
           test "$(lipo -archs 'dist/The Sitdown BBS.app/Contents/MacOS/The Sitdown BBS')" = "x86_64"
+      - name: Smoke test the packaged Intel app without radio
+        run: |
+          python - <<'PYTHON'
+          import subprocess
+          subprocess.run(['dist/The Sitdown BBS.app/Contents/MacOS/The Sitdown BBS',
+                          '--sitdown-smoke-test'], check=True, timeout=45)
+          PYTHON
       - name: Create unsigned test DMG
         run: |
           mkdir -p dmg-staging
           cp -R "dist/The Sitdown BBS.app" dmg-staging/
           ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "The Sitdown BBS TEST" \
-            -srcfolder dmg-staging -ov -format UDZO "The-Sitdown-BBS-Intel-Test.dmg"
+          bash scripts/create_dmg.sh "The-Sitdown-BBS-Intel-Test.dmg" "The Sitdown BBS TEST"
           shasum -a 256 "The-Sitdown-BBS-Intel-Test.dmg" > SHA256SUMS.txt
       - name: Upload downloadable test build
         uses: actions/upload-artifact@v4

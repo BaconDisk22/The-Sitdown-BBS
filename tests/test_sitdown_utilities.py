@@ -65,6 +65,29 @@ class UtilityTests(unittest.TestCase):
             mp.process_message(1, '/announce 0 sync', self.radio, is_sync_message=True)
             self.radio.sitdown.command.assert_not_called()
 
+    def test_receive_routes_only_direct_messages_to_utilities(self):
+        import message_processing as mp
+        self.radio.bbs_nodes = []
+        self.radio.myInfo.my_node_num = 42
+        self.radio.sitdown = self.service
+        packet = {'from': 2882400001, 'fromId': '!abcdef01', 'to': 42,
+                  'decoded': {'portnum': 'TEXT_MESSAGE_APP', 'payload': b'/node NJ01'}}
+        with patch.object(mp, 'get_user_state', return_value=None), patch.object(mp, 'send_message') as send:
+            mp.on_receive(packet, self.radio)
+            self.assertIn('North Jersey', send.call_args.args[0])
+            send.reset_mock()
+            packet['to'] = 0xffffffff
+            mp.on_receive(packet, self.radio)
+            send.assert_not_called()
+
+    def test_radio_reply_chunks_preserve_unicode_within_byte_budget(self):
+        from utils import message_chunks
+        text = 'Jersey 🗽 ' * 80
+        chunks = list(message_chunks(text))
+        self.assertEqual(''.join(chunks), text)
+        self.assertTrue(all(0 < len(chunk.encode('utf-8')) <= 200 for chunk in chunks))
+        self.assertEqual(list(message_chunks('')), [])
+
     def test_tcp_interface_uses_hostname(self):
         from config_init import get_interface
         with patch('config_init.meshtastic.tcp_interface.TCPInterface') as tcp:

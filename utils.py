@@ -12,10 +12,23 @@ def get_user_state(user_id):
     return user_states.get(user_id, None)
 
 
+def message_chunks(message, max_bytes=200):
+    """Respect the radio payload byte budget without splitting UTF-8 characters."""
+    chunk = ''
+    size = 0
+    for character in message:
+        encoded_size = len(character.encode('utf-8'))
+        if size + encoded_size > max_bytes:
+            yield chunk
+            chunk, size = '', 0
+        chunk += character
+        size += encoded_size
+    if chunk:
+        yield chunk
+
+
 def send_message(message, destination, interface):
-    max_payload_size = 200
-    for i in range(0, len(message), max_payload_size):
-        chunk = message[i:i + max_payload_size]
+    for chunk in message_chunks(message):
         try:
             d = interface.sendText(
                 text=chunk,
@@ -42,7 +55,7 @@ def get_node_info(interface, short_name):
 
 def get_node_id_from_num(node_num, interface):
     for node_id, node in interface.nodes.items():
-        if node['num'] == node_num:
+        if node.get('num') == node_num:
             return node_id
     return None
 
@@ -50,7 +63,7 @@ def get_node_id_from_num(node_num, interface):
 def get_node_short_name(node_id, interface):
     node_info = interface.nodes.get(node_id)
     if node_info:
-        return node_info['user']['shortName']
+        return node_info.get('user', {}).get('shortName')
     return None
 
 

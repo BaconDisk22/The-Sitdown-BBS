@@ -48,6 +48,16 @@ class OnlineTests(unittest.TestCase):
         self.assertIn('unavailable', WeatherDesk(self.config, self.open).report())
         self.open.assert_not_called()
 
+    def test_invalid_optional_flags_stay_offline(self):
+        self.config['mqtt_monitor'] = {'enabled': 'invalid'}
+        counter = ActivityCounter(self.config)
+        counter.start(self.open)
+        self.open.assert_not_called()
+        self.assertIn('Unavailable', counter.status)
+        self.config['weather'] = {'internet_enabled': 'invalid'}
+        self.assertIn('no request', WeatherDesk(self.config, self.open).report())
+        self.open.assert_not_called()
+
     def test_mqtt_opt_in_subscribe_count_and_stop(self):
         self.config['mqtt_monitor'] = {'enabled': 'true', 'host': 'example.invalid', 'topic': 'msh/test/#'}
         client = Mock()
