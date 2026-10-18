@@ -50,6 +50,7 @@ def init_cli_parser() -> argparse.Namespace:
     # Add extra arguments here
     #...
     
+    parser.add_argument("--desktop-control", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     
     return args
@@ -98,7 +99,7 @@ def initialize_config(config_file: str = None) -> dict[str, Any]:
     Returns:
         dict: dict with system configuration, ad described above
     """
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
 
     if config_file is None:
         config_file = "config.ini"

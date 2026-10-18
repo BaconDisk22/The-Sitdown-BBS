@@ -4,6 +4,7 @@ import logging
 import re
 import threading
 from sitdown_personality import Personality
+from sitdown_online import WeatherDesk, ActivityCounter
 
 
 def node_id(value):
@@ -28,7 +29,7 @@ def lookup_nodes(nodes, query=''):
         user = node.get('user') or {}
         identity = node_id(user.get('id')) or node_id(key) or node_id(node.get('num'))
         names = [str(user.get(field, '')) for field in ('shortName', 'longName')]
-        if query and not (wanted_id == identity or any(query in name.casefold() for name in names)):
+        if query and not ((wanted_id is not None and wanted_id == identity) or any(query in name.casefold() for name in names)):
             continue
         results.append({'id': identity or str(key), 'shortName': names[0], 'longName': names[1],
                         'hardware': user.get('hwModel'), 'role': user.get('role'),
@@ -51,6 +52,8 @@ class LocalUtilities:
         self.config = config if config is not None else configparser.ConfigParser()
         self.lock = threading.RLock()
         self.startup_attempted = False
+        self.weather = WeatherDesk(self.config)
+        self.mqtt = ActivityCounter(self.config)
 
     def channels(self):
         channels = getattr(getattr(self.interface, 'localNode', None), 'channels', [])
@@ -78,10 +81,12 @@ class LocalUtilities:
 
     def startup(self):
         """One attempt per process start; disabled by default."""
-        if self.startup_attempted or not self.config.getboolean('startup', 'enabled', fallback=False):
+        if self.startup_attempted:
             return False
-        self.startup_attempted = True
         try:
+            if not self.config.getboolean('startup', 'enabled', fallback=False):
+                return False
+            self.startup_attempted = True
             style = Personality(public_mode=self.config.get('personality', 'public_mode', fallback='clean'),
                                 allow_public_profanity=self.config.getboolean(
                                     'personality', 'allow_public_profanity', fallback=False))
@@ -96,6 +101,10 @@ class LocalUtilities:
     def command(self, message, sender):
         command, _, argument = message.strip().partition(' ')
         command = command.casefold()
+        if command == '/weather':
+            return self.weather.report()
+        if command == '/wire':
+            return self.mqtt.report()
         if command == '/node':
             if not argument.strip():
                 return "Who's Who: /node <ID, short name or long name>"

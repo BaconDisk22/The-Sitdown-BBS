@@ -60,7 +60,7 @@ def handle_help_command(sender_id, interface, menu_name=None):
         if menu_name == 'bbs':
             response = build_menu(bbs_menu_items, "📰 The Social Club")
         elif menu_name == 'utilities':
-            response = build_menu(utilities_menu_items, "🛠️ The Backroom") + "\n/node <ID or name>\n/announce <channel> <text> (admin)"
+            response = build_menu(utilities_menu_items, "🛠️ The Backroom") + "\n/weather — Jersey Weather Desk\n/wire — MQTT activity\n/node <ID or name>\n/announce <channel> <text> (admin)"
     else:
         update_user_state(sender_id, {'command': 'MAIN_MENU', 'step': 1})  # Reset to main menu state
         mail = get_mail(get_node_id_from_num(sender_id, interface))

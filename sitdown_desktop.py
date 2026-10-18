@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """The Sitdown BBS desktop launcher. Standard-library Tkinter GUI."""
 import json
+import configparser
+import sqlite3
+from tkinter import ttk
+from sitdown_utilities import format_node
+from sitdown_online import WeatherDesk
 import runpy
 import shutil
 from pathlib import Path
@@ -23,12 +28,16 @@ COMMANDS = [
     ("/mail", "Check your mail"), ("/boards", "The Social Club"),
     ("/fortune", "Jersey wisdom"), ("/tools", "Utilities"),
     ("/cancel", "Return to main menu"),
+    ("/node <ID or name>", "Who’s Who"), ("/weather", "Jersey Weather Desk"),
+    ("/wire", "MQTT activity"), ("/announce <channel> <text>", "Admin broadcast"),
 ]
 
 
 class SitdownApp:
     def __init__(self, root):
         self.root = root
+        self.snapshot = {'nodes': [], 'channels': [], 'mqtt': {'status': 'Disabled', 'total': 0, 'topics': []}}
+        self.active_page = None
         self.proc = None
         self.supervisor = None
         self.restart_at = None
@@ -37,6 +46,7 @@ class SitdownApp:
         self.node_count = tk.StringVar(value='Observed nodes: 0')
         self.uptime = tk.StringVar(value='Uptime: 0s')
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
+        self.auto_start = tk.BooleanVar(value=False)
         self.demo = tk.BooleanVar(value=False)
         self.connection = tk.StringVar(value="serial")
         self.address = tk.StringVar()
@@ -51,15 +61,29 @@ class SitdownApp:
         self.root.geometry("1280x900")
         self.root.minsize(960, 650)
         self.root.configure(bg=THEME["background"])
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('TNotebook', background=THEME['background'], borderwidth=0)
+        style.configure('TNotebook.Tab', background=THEME['panel'], foreground=THEME['text'], padding=(15, 10))
+        style.map('TNotebook.Tab', background=[('selected', THEME['primary'])], foreground=[('selected', 'white')])
+        style.configure('Desk.TEntry', fieldbackground='#0B141A', foreground='white', insertcolor='white', padding=8)
+        style.configure('TCombobox', fieldbackground=THEME['background'], foreground=THEME['text'])
+        style.map('TCombobox', fieldbackground=[('readonly', THEME['background'])], foreground=[('readonly', THEME['text'])])
+        self.root.option_add('*Entry.highlightThickness', 1)
+        self.root.option_add('*Entry.highlightBackground', '#527079')
+        self.root.option_add('*Entry.relief', 'flat')
         self.load()
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(1000, self.poll)
+        if self.auto_start.get():
+            self.root.after(200, self.start)
 
     def load(self):
         if CONFIG.exists():
             try:
                 data = json.loads(CONFIG.read_text(encoding="utf-8"))
+                self.auto_start.set(data.get("auto_start", False) is True)
                 self.connection.set(data.get("connection", "serial"))
                 self.address.set(data.get("address", ""))
                 self.community.set(data.get("community", "The Sitdown BBS"))
@@ -82,7 +106,7 @@ class SitdownApp:
             return
         DATA.mkdir(parents=True, exist_ok=True)
         CONFIG.write_text(json.dumps({
-            "connection": self.connection.get(), "address": self.address.get(),
+            "auto_start": self.auto_start.get(), "connection": self.connection.get(), "address": self.address.get(),
             "community": self.community.get(), "welcome": self.welcome.get(),
             "desktop_mouth": self.desktop_mouth.get(),
             "public_mouth": self.public_mouth.get(),
@@ -119,16 +143,21 @@ class SitdownApp:
             ("⚙  SETTINGS", self.settings),
             ("ⓘ  ABOUT", self.show_about),
         ]:
+            action = lambda name=title.split()[-1]: self.select_page(name)
             control = self.styled_button(
                 navigation, title, action,
                 c["primary"] if "HOME" in title else c["background"],
                 compact=True)
             self.nav_buttons.append(control)
         navigation.bind("<Configure>", self.layout_navigation)
-        tk.Frame(self.root, bg=c["connected"], height=4).pack(fill="x", padx=18)
-        tk.Frame(self.root, bg=c["primary"], height=4).pack(fill="x", padx=18, pady=(3, 0))
-        label(self.root, "Ayyy, pull up a chair. We gotta talk.", 12, c["highlight"]).pack(pady=(2, 10))
-        cards = tk.Frame(self.root, bg=c["background"])
+        self.page_host = tk.Frame(self.root, bg=c['background'])
+        self.page_host.pack(fill='both', expand=True)
+        self.home_page = tk.Frame(self.page_host, bg=c['background'])
+        self.home_page.pack(fill='both', expand=True)
+        tk.Frame(self.home_page, bg=c["connected"], height=4).pack(fill="x", padx=18)
+        tk.Frame(self.home_page, bg=c["primary"], height=4).pack(fill="x", padx=18, pady=(3, 0))
+        label(self.home_page, "Ayyy, pull up a chair. We gotta talk.", 12, c["highlight"]).pack(pady=(2, 10))
+        cards = tk.Frame(self.home_page, bg=c["background"])
         cards.pack(fill="x", padx=18, pady=(0, 4))
         for column in range(3):
             cards.grid_columnconfigure(column, weight=1, uniform="jersey")
@@ -182,6 +211,9 @@ class SitdownApp:
         tk.Checkbutton(server, text="Restart on crash", variable=self.auto_restart,
                        bg=c["panel"], fg=c["text"], selectcolor=c["background"]).pack(anchor="w")
 
+        tk.Checkbutton(server, text="Start BBS when app opens", variable=self.auto_start,
+                       bg=c['panel'], fg=c['text'], selectcolor=c['background']).pack(anchor='w')
+
         personality = card(2, "◈  JERSEY PERSONALITY")
         tk.Label(personality, text="Desktop greeting style", bg=c["panel"],
                  fg=c["text"]).pack(anchor="w")
@@ -190,21 +222,23 @@ class SitdownApp:
             tk.Radiobutton(personality, text=title, variable=self.desktop_mouth, value=mode,
                            bg=c["panel"], fg=c["text"],
                            selectcolor=c["background"]).pack(anchor="w")
+        self.styled_button(personality, "PREVIEW GREETING", lambda: self.show_info(
+            "Jersey Personality", Personality(self.desktop_mouth.get()).message("welcome")), c['background']).pack(fill='x', pady=4)
         self.styled_button(personality, "SAVE SETTINGS", self.save, c["connected"]).pack(
             fill="x", pady=(12, 4))
         self.styled_button(personality, "THE FAMILY BUSINESS", self.settings,
                            c["background"]).pack(fill="x", pady=4)
         tk.Label(personality, text="Public radio style is configured separately. "
-                 "These options do not change radio replies yet.",
+                 "Configure startup broadcasts and public greeting style in Settings.",
                  bg=c["panel"], fg=c["highlight"], wraplength=285,
                  justify="left").pack(anchor="w", pady=(8, 0))
 
-        tools = tk.Frame(self.root, bg=c["background"])
+        tools = tk.Frame(self.home_page, bg=c["background"])
         tools.pack(fill="x", padx=23, pady=(0, 4))
         for title, action in (("THE PLAYBOOK", self.commands),
-                              ("THE BOOKS", self.backup), ("WHO'S WHO", self.show_nodes)):
+                              ("THE BOOKS", self.backup), ("BBS DESK", lambda: self.select_page("BBS")), ("WHO'S WHO", self.show_nodes)):
             self.styled_button(tools, title, action, c["panel"]).pack(side="left", padx=(0, 8))
-        log_header = tk.Frame(self.root, bg=c["panel"], padx=12, pady=9,
+        log_header = tk.Frame(self.home_page, bg=c["panel"], padx=12, pady=9,
                               highlightbackground="#24404A", highlightthickness=1)
         log_header.pack(fill="x", padx=20, pady=(10, 0))
         label(log_header, "▤  SERVER LOG  •  THE BACKROOM", 12, c["highlight"]).pack(side="left")
@@ -214,7 +248,7 @@ class SitdownApp:
         button(log_header, "Clear Log", self.clear_log, c["panel"]).pack(side="right")
         button(log_header, "Nodes", self.show_nodes, c["panel"]).pack(side="right", padx=(0, 8))
         self.log_query = tk.StringVar()
-        search_row = tk.Frame(self.root, bg=c["panel"], padx=12, pady=7)
+        search_row = tk.Frame(self.home_page, bg=c["panel"], padx=12, pady=7)
         search_row.pack(fill="x", padx=20, pady=(8, 0))
         tk.Label(search_row, text="SEARCH LOG", bg=c["panel"], fg=c["highlight"],
                  font=("Helvetica", 10, "bold")).pack(side="left")
@@ -224,7 +258,7 @@ class SitdownApp:
 
 
         # Read-only footer: process status is not proof of a live radio link.
-        footer = tk.Frame(self.root, bg=c["panel"], padx=14, pady=7,
+        footer = tk.Frame(self.home_page, bg=c["panel"], padx=14, pady=7,
                           highlightbackground="#24404A", highlightthickness=1)
         footer.pack(side="bottom", fill="x", padx=20, pady=(0, 6))
         tk.Label(footer, text="THE SITDOWN BBS  •  NORTH JERSEY",
@@ -234,7 +268,7 @@ class SitdownApp:
                  font=("Helvetica", 10)).pack(side="right", padx=(14, 0))
         tk.Label(footer, text="SERVER PROCESS:", bg=c["panel"], fg=c["highlight"],
                  font=("Helvetica", 10, "bold")).pack(side="right")
-        self.output = tk.Text(self.root, bg="#0B141A", fg=c["text"], insertbackground=c["text"],
+        self.output = tk.Text(self.home_page, bg="#0B141A", fg=c["text"], insertbackground=c["text"],
                               wrap="word", relief="flat", state="disabled", height=7,
                               font=("Menlo", 11), padx=16, pady=12,
                               highlightbackground="#24404A", highlightthickness=1)
@@ -243,6 +277,207 @@ class SitdownApp:
         self.output.tag_configure("event_ready", foreground="#82D9A0")
         self.log(Personality(self.desktop_mouth.get(), self.public_mouth.get(), self.public_profanity.get()).message("welcome"))
         self.log("Pick a radio, or check Demo mode.")
+
+    def config_path(self):
+        return (DATA if getattr(sys, 'frozen', False) else ROOT) / 'config.ini'
+
+    def read_config(self):
+        config = configparser.ConfigParser(interpolation=None)
+        path = self.config_path()
+        config.read(path if path.exists() else ROOT / 'example_config.ini')
+        return config
+
+    def control_request(self, action, **fields):
+        if self.demo.get():
+            self.show_info('Demo mode', 'Demonstration only — no radio or internet request was sent.')
+            return
+        try:
+            if not self.supervisor:
+                raise RuntimeError('Start the BBS server first.')
+            self.supervisor.request(action, **fields)
+            self.log('Requested ' + action + '; awaiting server response.')
+        except RuntimeError as exc:
+            self.show_info('The Sitdown', str(exc))
+
+    def select_page(self, title):
+        for button in self.nav_buttons:
+            button.configure(bg=self.colors['primary'] if button.cget('text').split()[-1] == title else self.colors['background'])
+        if self.active_page is not None:
+            self.active_page.destroy()
+            self.active_page = None
+        self.home_page.pack_forget()
+        if title == 'HOME':
+            self.home_page.pack(fill='both', expand=True)
+            return
+        page = tk.Frame(self.page_host, bg=THEME['background'], padx=24, pady=15)
+        page.pack(fill='both', expand=True)
+        self.active_page = page
+        tk.Label(page, text=title + '  /  THE SITDOWN', font=('Helvetica', 20, 'bold'),
+                 bg=THEME['background'], fg=THEME['highlight']).pack(anchor='w', pady=(0, 15))
+        if title == 'BBS':
+            self.utility_page(page)
+        elif title == 'NODES':
+            self.nodes_page(page)
+        elif title in ('MESSAGES', 'BOARDS'):
+            self.database_page(page, title)
+        elif title == 'SETTINGS':
+            self.integration_settings(page)
+        elif title == 'RADIO':
+            for variable in (self.status, self.connection_summary, self.radio_activity, self.node_count, self.uptime):
+                tk.Label(page, textvariable=variable, bg=THEME['background'], fg=THEME['text'],
+                         font=('Helvetica', 14), justify='left').pack(anchor='w', pady=8)
+            self.page_text(page, 'Channels from the connected radio:\n' + json.dumps(self.snapshot['channels'], indent=2))
+        else:
+            self.page_text(page, 'THE SITDOWN BBS\nNorth Jersey Communications Division\n\n'
+                'Built for the mesh. Raised in Jersey.\nBased on TC²-BBS by TheCommsChannel. GPL-3.0.\n\n'
+                'Weather: Open-Meteo (only when enabled).\nMQTT counts are separate from radio reception.\n'
+                'Demo screens and build checks do not establish physical radio compatibility.')
+
+    def page_text(self, parent, text):
+        box = tk.Text(parent, bg='#0B141A', fg=THEME['text'], wrap='word',
+                      font=('Menlo', 12), padx=15, pady=15, relief='flat')
+        scroll = ttk.Scrollbar(parent, command=box.yview)
+        scroll.pack(side='right', fill='y')
+        box.configure(yscrollcommand=scroll.set)
+        box.pack(fill='both', expand=True, pady=10)
+        box.insert('1.0', text)
+        box.configure(state='disabled')
+        return box
+
+    def utility_page(self, page):
+        notebook = ttk.Notebook(page)
+        notebook.pack(fill='both', expand=True)
+        announcement = tk.Frame(notebook, bg=THEME['panel'], padx=20, pady=20)
+        weather = tk.Frame(notebook, bg=THEME['panel'], padx=20, pady=20)
+        wire = tk.Frame(notebook, bg=THEME['panel'], padx=20, pady=20)
+        for frame, title in ((announcement, 'The Boss Has Spoken'), (weather, 'Jersey Weather Desk'), (wire, 'The Wire')):
+            notebook.add(frame, text=title)
+        tk.Label(announcement, text='Broadcast to an enabled radio channel (maximum 200 UTF-8 bytes).',
+                 fg=THEME['text'], bg=THEME['panel']).pack(anchor='w')
+        channel = tk.StringVar()
+        options = [f"{ch['index']}: {ch['name']}" for ch in self.snapshot['channels']]
+        if options:
+            channel.set(options[0])
+        ttk.Combobox(announcement, textvariable=channel, values=options, state='readonly').pack(fill='x', pady=10)
+        text = tk.Text(announcement, height=5, bg=THEME['background'], fg=THEME['text'], insertbackground='white')
+        text.pack(fill='x', pady=10)
+        def send():
+            message = text.get('1.0', 'end-1c')
+            if not channel.get() or not message.strip() or len(message.encode('utf-8')) > 200:
+                self.show_info('Check announcement', 'Choose an enabled channel and enter 1–200 UTF-8 bytes.')
+                return
+            if messagebox.askyesno('Broadcast announcement?', f'Channel {channel.get()}\n\n{message}', parent=self.root):
+                self.control_request('announce', channel=int(channel.get().split(':', 1)[0]), text=message)
+        self.styled_button(announcement, 'PREVIEW & BROADCAST', send).pack(anchor='w')
+        tk.Label(announcement, text='Channel list updates when you reopen this tab after connecting.\n'
+                 'Remote /announce commands require an administrator ID in Settings.',
+                 bg=THEME['panel'], fg=THEME['highlight'], justify='left').pack(anchor='w', pady=15)
+        self.styled_button(weather, 'GET WEATHER REPORT', lambda: self.control_request('weather')).pack(anchor='w')
+        config = self.read_config()
+        enabled = config.getboolean('weather', 'internet_enabled', fallback=False)
+        self.page_text(weather, 'Internet weather: ' + ('Enabled' if enabled else 'Disabled') + '\n\n'
+                       + config.get('weather', 'local_report', fallback='No local report configured.')
+                       + '\n\nConfigure a local report or explicitly enable internet weather in Settings.\n'
+                       'Internet results use Open-Meteo, cache for ten minutes, and label stale data.')
+        self.styled_button(wire, 'REFRESH COUNTS', lambda: self.select_page('BBS')).pack(anchor='w')
+        data = self.snapshot['mqtt']
+        self.page_text(wire, f"MQTT: {data['status']}\nMessages this server session: {data['total']}\n\n"
+                       + '\n'.join(f'{count}  {topic}' for topic, count in data['topics'])
+                       + '\n\nMQTT is opt-in and never forwards messages to the radio.\n'
+                       'Counts exclude retained messages; they are not proof of radio RX.')
+
+    def nodes_page(self, page):
+        query = tk.StringVar()
+        tk.Label(page, text='Search the full radio node database by ID, short name, or long name.\n'
+                 'Snapshot remains visible after disconnect; reopen this tab to refresh.',
+                 bg=THEME['background'], fg=THEME['text'], justify='left').pack(anchor='w')
+        tk.Entry(page, textvariable=query, bg=THEME['panel'], fg=THEME['text'],
+                 insertbackground='white').pack(fill='x', pady=10)
+        box = self.page_text(page, '')
+        def refresh(*_):
+            from sitdown_utilities import node_id
+            key = query.get().strip().casefold()
+            rows = [row for row in self.snapshot['nodes'] if not key or node_id(key) == row['id']
+                    or key in (row['shortName'] + ' ' + row['longName']).casefold()]
+            text = '\n\n'.join(format_node(row) for row in rows) or 'No matching nodes. Connect a radio to load its database.'
+            box.configure(state='normal'); box.delete('1.0', 'end'); box.insert('1.0', text); box.configure(state='disabled')
+        query.trace_add('write', refresh)
+        refresh()
+
+    def database_page(self, page, title):
+        self.styled_button(page, 'REFRESH', lambda: self.select_page(title)).pack(anchor='w')
+        path = self.config_path().parent / 'bulletins.db'
+        text = 'No local database yet. Start the BBS to initialize it.'
+        if self.demo.get():
+            text = 'DEMO DATA — no radio connected\n\n' + ('Welcome to the Social Club\nGeneral: Stay local, stay connected.'
+                    if title == 'BOARDS' else 'Sample mail\nAyyy, pull up a chair.')
+        elif path.exists():
+            try:
+                with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as db:
+                    sql = ('SELECT board, sender_short_name, date, subject, content FROM bulletins ORDER BY id DESC LIMIT 100'
+                           if title == 'BOARDS' else 'SELECT sender_short_name, recipient, date, subject, content FROM mail ORDER BY id DESC LIMIT 100')
+                    rows = db.execute(sql).fetchall()
+                text = '\n\n'.join('\n'.join(str(value) for value in row) for row in rows) or 'No messages yet.'
+            except sqlite3.Error as exc:
+                text = 'Could not read the local database: ' + str(exc)
+        self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
+
+    def integration_settings(self, page):
+        config = self.read_config()
+        tabs = ttk.Notebook(page)
+        tabs.pack(fill='both', expand=True)
+        fields = {}
+        self.setting_fields = fields
+        sections = {
+            'startup': [('enabled', 'Broadcast on server start', 'bool'), ('channel', 'Channel index', '0'), ('message', 'Custom welcome (blank = personality)', '')],
+            'announcements': [('admin_nodes', 'Remote administrator node IDs (comma separated)', '')],
+            'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.7357'), ('longitude', 'Longitude', '-74.1724')],
+            'mqtt_monitor': [('enabled', 'Enable MQTT counter', 'bool'), ('host', 'Broker hostname', ''), ('topic', 'Subscription topic', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
+        }
+        for section, entries in sections.items():
+            frame = tk.Frame(tabs, bg=THEME['panel'], padx=20, pady=15)
+            tabs.add(frame, text={'mqtt_monitor': 'MQTT', 'startup': 'Startup', 'announcements': 'Admins', 'weather': 'Weather', 'personality': 'Personality'}[section])
+            for key, label, default in entries:
+                if default.startswith('bool'):
+                    var = tk.BooleanVar(value=config.getboolean(section, key, fallback=default == 'bool_true'))
+                    tk.Checkbutton(frame, text=label, variable=var, bg=THEME['panel'], fg=THEME['text'], selectcolor=THEME['background']).pack(anchor='w', pady=8)
+                else:
+                    var = tk.StringVar(value=config.get(section, key, fallback=default))
+                    tk.Label(frame, text=label, bg=THEME['panel'], fg=THEME['text']).pack(anchor='w', pady=(8, 2))
+                    ttk.Entry(frame, textvariable=var, show='*' if key == 'password' else '', style='Desk.TEntry').pack(fill='x', pady=(3, 8))
+                fields[(section, key)] = var
+        def save():
+            for (section, key), var in fields.items():
+                if not config.has_section(section):
+                    config.add_section(section)
+                config.set(section, key, str(var.get()).lower() if isinstance(var, tk.BooleanVar) else var.get())
+            try:
+                Personality(public_mode=config.get('personality', 'public_mode'))
+                channel = config.getint('startup', 'channel')
+                if not 0 <= channel <= 7:
+                    raise ValueError('Startup channel must be 0–7.')
+                if len(config.get('startup', 'message').encode('utf-8')) > 200:
+                    raise ValueError('Startup message exceeds 200 UTF-8 bytes.')
+                if config.getboolean('weather', 'internet_enabled'):
+                    if not (-90 <= config.getfloat('weather', 'latitude') <= 90 and -180 <= config.getfloat('weather', 'longitude') <= 180):
+                        raise ValueError('Invalid weather coordinates.')
+                if config.getboolean('mqtt_monitor', 'enabled'):
+                    if not config.get('mqtt_monitor', 'host').strip() or not config.get('mqtt_monitor', 'topic').strip():
+                        raise ValueError('MQTT requires an explicit broker and topic.')
+                    if not 1 <= config.getint('mqtt_monitor', 'port') <= 65535:
+                        raise ValueError('Invalid MQTT port.')
+                path = self.config_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_suffix('.ini.tmp')
+                with temporary.open('w') as stream:
+                    config.write(stream)
+                temporary.chmod(0o600)
+                temporary.replace(path)
+                self.show_info('Settings saved', 'Restart the server to apply these settings.')
+            except (ValueError, OSError) as exc:
+                self.show_info('Settings not saved', str(exc))
+        self.styled_button(page, 'SAVE — APPLY ON NEXT SERVER START', save, THEME['connected']).pack(pady=10)
 
     def layout_navigation(self, event):
         """Wrap measured controls so every action survives font/window resizing."""
@@ -281,19 +516,18 @@ class SitdownApp:
         line((0, .88, 1, .88), THEME["highlight"], 3)
         # Layer the identity over the skyline rather than shrinking it into a side panel.
         title_font = ("Helvetica", max(22, min(47, int(width / 24))), "bold")
-        canvas.create_rectangle(0, height * .1, width, height * .88,
-                                fill="#071017", stipple="gray50", outline="")
-        canvas.create_text(width * .035, height * .35, text="THE",
-                           fill="#F5F5F0", anchor="w",
-                           font=("Helvetica", max(12, int(width / 58)), "bold"))
-        canvas.create_text(width * .035, height * .59, text="SITDOWN",
-                           fill="#008C45", anchor="w", font=title_font)
-        canvas.create_text(width * .62, height * .59, text="BBS",
-                           fill="#C62828", anchor="w", font=title_font)
-        canvas.create_text(width * .038, height * .79,
-                           text="NORTH JERSEY  •  COMMUNICATIONS DIVISION",
-                           fill="#F5F5F0", anchor="w",
-                           font=("Helvetica", max(9, min(13, int(width / 82))), "bold"))
+        # Aqua Tk does not render stippled fills transparently; keep skyline visible.
+        canvas.create_rectangle(0, 0, width * .52, height * .86, fill='#071017', outline='')
+        canvas.create_text(width * .035, height * .2, text='THE', fill='#F5F5F0', anchor='w',
+                           font=('Helvetica', max(12, int(width / 70)), 'bold'))
+        x = width * .035
+        for word, color in (('SIT', '#008C45'), ('DOWN', '#F5F5F0'), (' BBS', '#E13232')):
+            item = canvas.create_text(x, height * .5, text=word, fill=color, anchor='w', font=title_font)
+            x = canvas.bbox(item)[2]
+        canvas.create_text(width * .038, height * .78,
+                           text='NORTH JERSEY  •  COMMUNICATIONS DIVISION',
+                           fill='#F5F5F0', anchor='w',
+                           font=('Helvetica', max(9, min(13, int(width / 82))), 'bold'))
 
 
     def show_info(self, title, message):
@@ -346,6 +580,7 @@ class SitdownApp:
         self.status_dot.configure(fg=color)
 
     def show_home(self):
+        self.select_page("HOME")
         """Home is the main live dashboard."""
         self.log("HOME: Dashboard is already open.")
 
@@ -376,7 +611,7 @@ class SitdownApp:
         # producing white-on-white labels. Use a keyboard-accessible Label.
         background = color or self.colors["primary"]
         control = tk.Label(parent, text=text, bg=background, fg="#FFFFFF",
-                           padx=8 if compact else 13, pady=7 if compact else 10,
+                           padx=8 if compact else 13, pady=7,
                            cursor="hand2",
                            font=("Helvetica", 10 if compact else 12, "bold"), relief="flat",
                            highlightthickness=2, highlightbackground=self.colors["background"],
@@ -423,16 +658,7 @@ class SitdownApp:
             self.show_info("The Backroom", "No matching log entry found.")
 
     def show_nodes(self):
-        """Display observed node IDs only; no network lookup or radio traffic."""
-        win = tk.Toplevel(self.root)
-        win.title("Who's Who — Observed Nodes")
-        win.configure(bg=THEME["background"])
-        tk.Label(win, text="WHO'S WHO IN THE FAMILY", fg=THEME["highlight"],
-                 bg=THEME["background"], font=("Helvetica", 16, "bold")).pack(padx=18, pady=12)
-        nodes = sorted(str(node) for node in (self.supervisor.nodes if self.supervisor else []))
-        display = "\n".join(nodes) if nodes else "No nodes observed in this session."
-        tk.Label(win, text=display, fg=THEME["text"], bg=THEME["background"],
-                 justify="left", wraplength=480).pack(padx=18, pady=(0, 18))
+        self.select_page('NODES')
 
     def clear_log(self):
         """Clear the visible log only; the running server is unaffected."""
@@ -471,6 +697,11 @@ class SitdownApp:
         if self.supervisor and self.supervisor.running:
             return
         if self.demo.get():
+            self.snapshot = {'type': 'snapshot', 'channels': [{'index': 0, 'name': 'DEMO Local'}],
+                'nodes': [{'id': '!abcdef01', 'shortName': 'DEMO', 'longName': 'Demonstration node',
+                          'hardware': 'Demo', 'role': 'CLIENT', 'lastHeard': None, 'snr': None,
+                          'hopsAway': None, 'deviceMetrics': {}, 'position': {}}],
+                'mqtt': {'status': 'Disabled (demo)', 'total': 0, 'topics': []}}
             self.status.set("Demo running — no radio")
             self.radio_activity.set("Radio activity: Demo only")
             self.log("DEMO: No radio messages are sent.")
@@ -488,9 +719,10 @@ class SitdownApp:
         if self.connection.get() == "tcp" and not addr:
             messagebox.showerror("Need a Guy?", "Enter the radio IP or hostname for TCP.")
             return
+        self.snapshot = {'nodes': [], 'channels': [], 'mqtt': {'status': 'Awaiting server', 'total': 0, 'topics': []}}
         self.save()
         cmd = ([sys.executable, "--sitdown-server"] if getattr(sys, "frozen", False)
-               else [sys.executable, "-u", str(ROOT / "server.py")]) + ["--config", str(config),
+               else [sys.executable, "-u", str(ROOT / "server.py")]) + ["--config", str(config), "--desktop-control",
                "--interface-type", self.connection.get()]
         if addr:
             cmd += ["--host" if self.connection.get() == "tcp" else "--port", addr]
@@ -516,6 +748,12 @@ class SitdownApp:
                     self.status.set(value)
                 elif kind == "activity":
                     self.radio_activity.set("Radio RX observed in BBS logs")
+                elif kind == "control":
+                    if value.get('type') == 'snapshot':
+                        self.snapshot = value
+                    else:
+                        self.log(value.get('error') or value.get('text', 'Operation complete.'))
+                        self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
                 elif kind == "node":
                     self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
             if monitor.running:
@@ -595,43 +833,7 @@ class SitdownApp:
         self.styled_button(win, "Copy selected command", copy, THEME["primary"]).pack(pady=15)
 
     def settings(self):
-        win = tk.Toplevel(self.root)
-        win.title("The Family Business")
-        win.configure(bg=THEME["background"])
-        for name, var in [("Community name", self.community), ("Welcome message (local setting)", self.welcome)]:
-            tk.Label(win, text=name, bg=THEME["background"], fg=THEME["text"]).pack(anchor="w", padx=20, pady=(12, 0))
-            tk.Entry(win, textvariable=var, width=55, bg=THEME["panel"], fg=THEME["text"],
-                     insertbackground=THEME["text"]).pack(padx=20)
-        tk.Label(win, text="Custom welcome is saved locally; radio reply integration is pending.",
-                 bg=THEME["background"], fg=THEME["highlight"]).pack(padx=20, pady=10)
-        tk.Label(win, text="JERSEY MOUTH CONTROL — DESKTOP", bg=THEME["background"], fg=THEME["highlight"]).pack(padx=20, pady=(10, 2))
-        for text, mode in [("Clean Jersey", "clean"), ("Jersey Attitude", "attitude"), ("Full Jersey Mouth", "uncensored")]:
-            tk.Radiobutton(win, text=text, variable=self.desktop_mouth, value=mode,
-                           bg=THEME["background"], fg=THEME["text"], selectcolor=THEME["panel"]).pack(anchor="w", padx=20)
-        tk.Label(win, text="PUBLIC RADIO MESSAGE STYLE (future integration)", bg=THEME["background"], fg=THEME["highlight"]).pack(padx=20, pady=(10, 2))
-        for text, mode in [("Clean Jersey", "clean"), ("Jersey Attitude", "attitude"), ("Full Jersey Mouth", "uncensored")]:
-            tk.Radiobutton(win, text=text, variable=self.public_mouth, value=mode,
-                           bg=THEME["background"], fg=THEME["text"], selectcolor=THEME["panel"]).pack(anchor="w", padx=20)
-        tk.Checkbutton(win, text="I explicitly allow profanity in future public radio broadcasts",
-                       variable=self.public_profanity, bg=THEME["background"], fg=THEME["text"],
-                       selectcolor=THEME["panel"]).pack(anchor="w", padx=20, pady=6)
-        tk.Label(win, text="Preferences are local only; BBS radio integration is not yet active.",
-                 bg=THEME["background"], fg=THEME["highlight"]).pack(padx=20)
-        preview = tk.StringVar()
-        def refresh_preview(*_args):
-            try:
-                personality = Personality(self.desktop_mouth.get(), self.public_mouth.get(),
-                                          self.public_profanity.get())
-                preview.set("Desktop: " + personality.message("welcome") +
-                            "\nPublic (not transmitted): " + personality.message("welcome", public=True))
-            except ValueError:
-                preview.set("Invalid personality settings")
-        for variable in (self.desktop_mouth, self.public_mouth, self.public_profanity):
-            variable.trace_add("write", refresh_preview)
-        refresh_preview()
-        tk.Label(win, textvariable=preview, justify="left", wraplength=490,
-                 bg=THEME["panel"], fg=THEME["text"], padx=12, pady=10).pack(fill="x", padx=20, pady=10)
-        self.styled_button(win, "Save", self.save, THEME["connected"]).pack(pady=12)
+        self.select_page('SETTINGS')
 
     def backup(self):
         DATA.mkdir(parents=True, exist_ok=True)
@@ -640,7 +842,7 @@ class SitdownApp:
         if not destination:
             return
         with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in [CONFIG, ROOT / "config.ini", *ROOT.glob("*.db")]:
+            for path in [CONFIG, self.config_path(), *self.config_path().parent.glob("*.db")]:
                 if path.exists() and path.is_file():
                     archive.write(path, path.name)
         self.log("The Books: backup saved. Treat backups as sensitive; they may contain messages and keys.")
@@ -651,6 +853,24 @@ class SitdownApp:
 
 
 if __name__ == "__main__":
+    if '--sitdown-smoke-test' in sys.argv:
+        # Exercise the packaged imports and actual Tk pages without user config/radio.
+        import tempfile
+        import server
+        import paho.mqtt.client
+        with tempfile.TemporaryDirectory() as folder:
+            DATA = Path(folder)
+            CONFIG = DATA / 'launcher.json'
+            root = tk.Tk()
+            app = SitdownApp(root)
+            app.demo.set(True)
+            app.start()
+            for page in ('BBS', 'NODES', 'SETTINGS', 'HOME'):
+                app.select_page(page)
+                root.update()
+            assert app.status.get() == 'Demo running — no radio'
+            root.destroy()
+        sys.exit(0)
     if "--sitdown-server" in sys.argv:
         sys.argv.remove("--sitdown-server")
         import server  # Ensures PyInstaller includes the server and its dependencies.

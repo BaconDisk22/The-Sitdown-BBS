@@ -15,7 +15,7 @@ The existing one-letter menu options and existing quick commands remain availabl
 
 ## Design palette
 
-`sitdown_theme.json` defines the **future desktop UI** palette: charcoal and black, Italian red and green, mozzarella white, diner gold. There are **no Joker colors**. The JSON is a design resource; the Python server currently has no desktop GUI to render it.
+`sitdown_desktop.py` implements the dark Jersey desktop with red/green accents, original skyline artwork, operator desks and log controls.
 
 ## Development
 
@@ -26,3 +26,13 @@ python -m unittest discover -s tests -p 'test_sitdown_commands.py'
 ```
 
 Radio integration and packaging still require hardware/runtime validation.
+
+
+## Operator utilities
+
+- `/node <ID or name>` — full radio node lookup.
+- `/weather` — offline report or explicitly enabled internet weather.
+- `/wire` — optional MQTT activity, separate from radio RX.
+- `/announce <channel> <text>` — configured administrator nodes only.
+
+See [configuration details](docs/JERSEY_DESK.md).
