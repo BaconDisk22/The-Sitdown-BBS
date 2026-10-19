@@ -49,6 +49,7 @@ class ServerSupervisor:
         self.rx_count = 0
         self.tx_count = 0
         self.last_link_error = None
+        self.link_state = 'unverified'
         self.process = self.factory(
             self.command, cwd=self.cwd, stdout=subprocess.PIPE,
             env={**os.environ, 'SITDOWN_CONTROL_TOKEN': self.control_token},
