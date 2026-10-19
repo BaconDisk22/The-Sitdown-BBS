@@ -77,7 +77,7 @@ class SitdownApp:
         self.load()
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
-        self.root.after(1000, self.poll)
+        self.root.after(250, self.poll)
         if self.auto_start.get():
             self.root.after(200, self.start)
 
@@ -207,7 +207,7 @@ class SitdownApp:
         self.refresh_status_indicator()
         self.styled_button(server, 'Start BBS Server', self.start, '#233139').pack(fill='x', pady=3)
         self.toggle_row(server, 'Auto start at launch', self.auto_start)
-        self.toggle_row(server, 'Restart on crash', self.auto_restart)
+        self.toggle_row(server, 'Recover after crash / disconnect', self.auto_restart)
         self.toggle_row(server, 'Demo — no radio', self.demo)
         self.styled_button(server, '↻  Restart Server', self.restart, '#233139').pack(fill='x', pady=(10, 3))
         self.styled_button(server, '■  Stop Server', self.stop, c['primary']).pack(fill='x', pady=3)
@@ -758,6 +758,7 @@ class SitdownApp:
             self.supervisor = None
             self.status.set("Start failed")
             self.log(f"Start failed: {exc}")
+            self.schedule_recovery()
 
     def poll(self):
         monitor = self.supervisor
@@ -800,6 +801,9 @@ class SitdownApp:
         if self.restart_at is not None and (not self.auto_restart.get() or self.demo.get()):
             self.restart_at = None
             self.status.set("Stopped — recovery cancelled")
+        if self.restart_at is not None and self.restart_at > time.monotonic():
+            remaining = max(1, int(self.restart_at - time.monotonic() + 0.999))
+            self.status.set(f"Recovery in {remaining}s (attempt {self.retry_count})")
         if self.restart_at is not None and time.monotonic() >= self.restart_at:
             self.restart_at = None
             self.start()
@@ -835,6 +839,9 @@ class SitdownApp:
             f"Radio activity: {self.radio_activity.get()}",
             f"Observed RX/TX: {monitor.rx_count if monitor else 0}/{monitor.tx_count if monitor else 0}",
             f"Last transport error: {monitor.last_link_error if monitor else None}",
+            f"SDK session: {monitor.link_state if monitor else 'unverified'}",
+            f"Recovery enabled: {self.auto_restart.get()}",
+            f"Recovery attempts: {self.retry_count}",
             "Radio connection verified: Log-observed activity only, not continuous link health",
         ]
         self.root.clipboard_clear()
