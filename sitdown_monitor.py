@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 from sitdown_control import PREFIX
+from sitdown_link import PREFIX as LINK_PREFIX
 import re
 import subprocess
 import threading
@@ -36,6 +37,7 @@ class ServerSupervisor:
         self.rx_count = 0
         self.tx_count = 0
         self.last_link_error = None
+        self.link_state = 'unverified'
 
     def start(self):
         if self.process and self.process.poll() is None:
@@ -65,6 +67,15 @@ class ServerSupervisor:
                         self.events.put(('control', json.loads(line[len(self.control_prefix):])))
                     except ValueError:
                         self.events.put(('log', 'Invalid desktop event ignored.'))
+                    continue
+                if line.startswith(LINK_PREFIX):
+                    try:
+                        state = json.loads(line[len(LINK_PREFIX):])['state']
+                        if state in ('sdk_connected', 'disconnected'):
+                            self.link_state = state
+                            self.events.put(('link_state', state))
+                    except (ValueError, KeyError, TypeError):
+                        pass
                     continue
                 if READY_PATTERN.search(line):
                     self.ready = True
@@ -119,6 +130,7 @@ class ServerSupervisor:
         self.started_at = None
         self.ready = False
         self.last_rx_at = None
+        self.link_state = 'unverified'
 
     def poll_events(self, limit=100):
         items = []
