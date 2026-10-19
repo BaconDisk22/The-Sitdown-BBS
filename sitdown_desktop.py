@@ -15,6 +15,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox, filedialog
 from sitdown_backup import create_backup_archive
+from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
 from sitdown_personality import Personality
 import zipfile
@@ -794,7 +795,7 @@ class SitdownApp:
                         self.log(value.get('error') or value.get('text', 'Operation complete.'))
                         self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
                 elif kind == "link_error":
-                    self.link_warning.set("Radio transport error — see server log")
+                    self.link_warning.set(explain_transport_error(value, self.connection.get()))
                 elif kind == "node":
                     self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
             if hasattr(self, "traffic"):
