@@ -46,6 +46,8 @@ class SitdownApp:
         self.node_count = tk.StringVar(value='Observed nodes: 0')
         self.uptime = tk.StringVar(value='Uptime: 0s')
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
+        self.traffic = tk.StringVar(value='Messages observed: RX 0 / TX 0')
+        self.link_warning = tk.StringVar(value='Radio link: Unverified')
         self.auto_start = tk.BooleanVar(value=False)
         self.demo = tk.BooleanVar(value=False)
         self.connection = tk.StringVar(value="serial")
@@ -189,6 +191,8 @@ class SitdownApp:
 
         tk.Label(radio, textvariable=self.node_count, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
         tk.Label(radio, textvariable=self.uptime, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
+        tk.Label(radio, textvariable=self.traffic, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
+        tk.Label(radio, textvariable=self.link_warning, bg=c['panel'], fg=c['highlight'], wraplength=280).pack(anchor='w', pady=3)
         self.styled_button(radio, 'Disconnect', self.stop, c['primary']).pack(fill='x', pady=(10, 0))
 
         server = card(1, "BBS Server")
@@ -770,8 +774,12 @@ class SitdownApp:
                     else:
                         self.log(value.get('error') or value.get('text', 'Operation complete.'))
                         self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
+                elif kind == "link_error":
+                    self.link_warning.set("Radio transport error — see server log")
                 elif kind == "node":
                     self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
+            if hasattr(self, "traffic"):
+                self.traffic.set(f"Messages observed: RX {monitor.rx_count} / TX {monitor.tx_count}")
             if monitor.running:
                 if monitor.last_rx_at is not None:
                     age = max(0, int(time.time() - monitor.last_rx_at))
@@ -812,6 +820,8 @@ class SitdownApp:
             f"Observed nodes: {len(monitor.nodes) if monitor else 0}",
             f"Uptime: {monitor.uptime_seconds() if monitor else 0}s",
             f"Radio activity: {self.radio_activity.get()}",
+            f"Observed RX/TX: {monitor.rx_count if monitor else 0}/{monitor.tx_count if monitor else 0}",
+            f"Last transport error: {monitor.last_link_error if monitor else None}",
             "Radio connection verified: Log-observed activity only, not continuous link health",
         ]
         self.root.clipboard_clear()
