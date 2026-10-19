@@ -14,6 +14,8 @@ import threading
 import time
 
 NODE_PATTERN = re.compile(r"Received message from user '([^']+)' \((![0-9a-fA-F]+)\)")
+TX_PATTERN = re.compile(r"Sending message to user", re.I)
+LINK_ERROR_PATTERN = re.compile(r"(?:no route to host|connection refused|connection reset|broken pipe|network is unreachable|timed out)", re.I)
 READY_PATTERN = re.compile(r"(?:THE SITDOWN BBS|TC²-BBS|BBS) is running on", re.I)
 
 
@@ -31,6 +33,9 @@ class ServerSupervisor:
         self.ready = False
         self.last_rx_at = None
         self.stopping = False
+        self.rx_count = 0
+        self.tx_count = 0
+        self.last_link_error = None
 
     def start(self):
         if self.process and self.process.poll() is None:
@@ -39,6 +44,9 @@ class ServerSupervisor:
         self.ready = False
         self.last_rx_at = None
         self.nodes.clear()
+        self.rx_count = 0
+        self.tx_count = 0
+        self.last_link_error = None
         self.process = self.factory(
             self.command, cwd=self.cwd, stdout=subprocess.PIPE,
             env={**os.environ, 'SITDOWN_CONTROL_TOKEN': self.control_token},
@@ -61,8 +69,15 @@ class ServerSupervisor:
                 if READY_PATTERN.search(line):
                     self.ready = True
                     self.events.put(("state", "Server initialized (radio link unverified)"))
+                if LINK_ERROR_PATTERN.search(line):
+                    self.last_link_error = line
+                    self.events.put(("link_error", line))
+                if TX_PATTERN.search(line):
+                    self.tx_count += 1
+                    self.events.put(("activity", "tx"))
                 match = NODE_PATTERN.search(line)
                 if match:
+                    self.rx_count += 1
                     self.last_rx_at = time.time()
                     self.events.put(("activity", "rx"))
                     name, node_id = match.groups()
