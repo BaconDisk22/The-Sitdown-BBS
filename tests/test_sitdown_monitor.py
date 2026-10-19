@@ -59,6 +59,29 @@ class SupervisorTests(unittest.TestCase):
         self.assertIsNone(supervisor.last_rx_at)
         self.assertEqual(supervisor.nodes, {})
 
+    def test_transport_error_and_traffic_counters(self):
+        fake = Mock()
+        fake.poll.return_value = None
+        fake.stdout = iter([
+            "INFO - Received message from user 'JERZ' (!abcd1234) to BBS: hi\\n",
+            "Sending message to user !abcd1234\\n",
+            "OSError: [Errno 65] No route to host\\n",
+        ])
+        supervisor = ServerSupervisor(["python", "server.py"], ".", factory=Mock(return_value=fake))
+        supervisor.start()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and supervisor.last_link_error is None:
+            time.sleep(0.01)
+        self.assertEqual(supervisor.rx_count, 1)
+        self.assertEqual(supervisor.tx_count, 1)
+        self.assertIn("No route to host", supervisor.last_link_error)
+        self.assertTrue(any(kind == "link_error" for kind, _ in supervisor.poll_events()))
+        fake.poll.return_value = 1
+        supervisor.start()
+        self.assertEqual(supervisor.rx_count, 0)
+        self.assertEqual(supervisor.tx_count, 0)
+        self.assertIsNone(supervisor.last_link_error)
+
     def test_uptime_when_stopped(self):
         supervisor = ServerSupervisor(["python"], ".")
         self.assertEqual(supervisor.uptime_seconds(), 0)
