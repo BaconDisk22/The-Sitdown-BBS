@@ -137,6 +137,7 @@ class SitdownApp:
         navigation.pack(fill="x", padx=12, pady=(2, 6))
         self.navigation = navigation
         self.nav_buttons = []
+        self._nav_columns = None
         for title, action in [
             ("⌂  HOME", self.show_home),
             ("▣  BBS", self.commands),
@@ -502,8 +503,13 @@ class SitdownApp:
 
     def layout_navigation(self, event):
         """Wrap measured controls so every action survives font/window resizing."""
+        if not self.nav_buttons:
+            return
         cell_width = max(control.winfo_reqwidth() for control in self.nav_buttons) + 6
         columns = max(1, min(len(self.nav_buttons), event.width // cell_width))
+        if columns == self._nav_columns:
+            return
+        self._nav_columns = columns
         for column in range(len(self.nav_buttons)):
             self.navigation.grid_columnconfigure(column, weight=1 if column < columns else 0,
                                                  uniform='nav' if column < columns else '')
