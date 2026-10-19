@@ -22,6 +22,41 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(app.connection_summary.set.call_args.args[0].splitlines(),
                              [f"Configured: {name}", "Endpoint: 10.0.0.76"])
 
+    def test_recovery_backoff_is_opt_in_and_capped(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.auto_restart = Mock(get=Mock(return_value=True))
+        app.demo = Mock(get=Mock(return_value=False))
+        app.log = Mock()
+        app.status = Mock()
+        app.retry_count = 0
+        app.restart_at = None
+        with patch.object(desktop.time, "monotonic", return_value=100):
+            for attempt in range(1, 9):
+                app.schedule_recovery()
+                self.assertEqual(app.retry_count, attempt)
+                self.assertEqual(app.restart_at, 100 + min(60, 2 ** min(attempt, 6)))
+        app.auto_restart.get.return_value = False
+        app.restart_at = None
+        app.schedule_recovery()
+        self.assertIsNone(app.restart_at)
+        app.auto_restart.get.return_value = True
+        app.demo.get.return_value = True
+        app.schedule_recovery()
+        self.assertIsNone(app.restart_at)
+
+    def test_explicit_stop_cancels_pending_recovery(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.restart_at = 200
+        app.retry_count = 4
+        app.supervisor = None
+        app.status = Mock()
+        app.radio_activity = Mock()
+        app.uptime = Mock()
+        app.log = Mock()
+        app.stop()
+        self.assertIsNone(app.restart_at)
+        self.assertEqual(app.retry_count, 0)
+
     def test_start_passes_transport_and_endpoint_and_stop_cancels_restart(self):
         for transport, flag, address in (("tcp", "--host", "10.0.0.76"),
                                          ("serial", "--port", "/dev/cu.usbmodem1")):
