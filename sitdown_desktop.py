@@ -960,9 +960,13 @@ if __name__ == "__main__":
             app = SitdownApp(root)
             app.demo.set(True)
             app.start()
-            for page in ('BBS', 'NODES', 'SETTINGS', 'HOME'):
+            for page in ('BBS', 'MESSAGES', 'BOARDS', 'NODES', 'SETTINGS', 'HOME'):
                 app.select_page(page)
                 root.update()
+                if page == 'HOME':
+                    assert app.home_page.winfo_ismapped(), 'Home dashboard did not reappear'
+                    assert app.active_page is None, 'Other page still active on Home'
+                    assert app.home_page.winfo_children(), 'Home dashboard controls disappeared'
             assert app.status.get() == 'Demo running — no radio'
             root.destroy()
         sys.exit(0)
