@@ -54,9 +54,11 @@ class SupervisorTests(unittest.TestCase):
         supervisor = ServerSupervisor(["python", "server.py"], ".", factory=factory)
         supervisor.start()
         supervisor.last_rx_at = time.time()
+        supervisor.link_state = "sdk_connected"
         supervisor.nodes["!abcd1234"] = ("JERZ", time.time())
         self.assertTrue(supervisor.start())
         self.assertIsNone(supervisor.last_rx_at)
+        self.assertEqual(supervisor.link_state, "unverified")
         self.assertEqual(supervisor.nodes, {})
 
     def test_transport_error_and_traffic_counters(self):
