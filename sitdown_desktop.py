@@ -15,6 +15,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox, filedialog
 from sitdown_backup import create_backup_archive
+from sitdown_restore_preflight import inspect_backup_archive
 from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
 from sitdown_personality import Personality
@@ -255,6 +256,7 @@ class SitdownApp:
                  bg=c["panel"], fg=c["highlight"],
                  font=("Helvetica", 10, "bold")).pack(side="left")
         self.styled_button(footer, 'The Books', self.backup, c['panel'], compact=True).pack(side='left', padx=8)
+        self.styled_button(footer, 'Verify Backup', self.verify_backup, c['panel'], compact=True).pack(side='left', padx=4)
         self.styled_button(footer, 'Diagnostics', self.copy_diagnostics, c['panel'], compact=True).pack(side='left')
         tk.Label(footer, textvariable=self.status, bg=c["panel"], fg=c["text"],
                  font=("Helvetica", 10)).pack(side="right", padx=(14, 0))
@@ -913,6 +915,29 @@ class SitdownApp:
             self.show_info("Backup failed", f"No new backup was saved. {exc}")
             return
         self.log("The Books: verified backup saved. Treat backups as sensitive; they may contain messages and keys.")
+
+    def verify_backup(self):
+        """Read-only validation of a selected archive; never restores live files."""
+        selected = filedialog.askopenfilename(
+            title="Verify The Books backup",
+            filetypes=[("Zip archive", "*.zip")])
+        if not selected:
+            return
+        try:
+            report = inspect_backup_archive(selected)
+        except (OSError, ValueError, sqlite3.DatabaseError, zipfile.BadZipFile,
+                RuntimeError, EOFError) as exc:
+            self.log(f"The Books: backup verification failed: {exc}")
+            self.show_info("Backup verification failed",
+                           "The selected backup did not pass validation. "
+                           "No live files were changed. Check the server log for details.")
+            return
+        self.log(f"The Books: backup verified ({len(report['files'])} files, "
+                 f"{len(report['databases'])} SQLite databases).")
+        self.show_info("Backup verified",
+                       f"Archive passed verification. Files: {len(report['files'])}. "
+                       f"SQLite databases: {len(report['databases'])}. "
+                       "No live files were changed. This is not a restore.")
 
     def close(self):
         self.stop()
