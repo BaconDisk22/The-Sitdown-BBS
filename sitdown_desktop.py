@@ -475,6 +475,27 @@ class SitdownApp:
                     tk.Label(frame, text=label, bg=THEME['panel'], fg=THEME['text']).pack(anchor='w', pady=(8, 2))
                     ttk.Entry(frame, textvariable=var, show='*' if key == 'password' else '', style='Desk.TEntry').pack(fill='x', pady=(3, 8))
                 fields[(section, key)] = var
+            if section == 'mqtt_monitor':
+                guide = (
+                    "CENTRALNJ / TWO-WAY RADIO SETUP\n"
+                    "1. Configure the CentralNJ channel and its PSK on your Meshtastic radio.\n"
+                    "2. Configure the radio MQTT broker: mqtt.meshtastic.org.\n"
+                    "3. Enter broker credentials on the radio, not in a public repository.\n"
+                    "4. Enable MQTT uplink and downlink for the CentralNJ channel on the radio.\n"
+                    "5. Set the radio MQTT root topic to the correct regional topic.\n"
+                    "6. Connect the radio to this BBS by USB or TCP and test with a small message.\n\n"
+                    "The MQTT counter above is separate: it only counts incoming broker "
+                    "traffic and cannot decrypt or send Meshtastic messages. "
+                    "Leave it disabled unless you explicitly want monitoring. "
+                    "Avoid subscribing broadly to msh/US/# on limited hardware; "
+                    "start with the narrowest authorized topic. "
+                    "Two-way delivery requires radio and channel configuration; "
+                    "this screen does not activate radio MQTT automatically."
+                )
+                self.styled_button(
+                    frame, 'CENTRALNJ SETUP GUIDE',
+                    lambda text=guide: self.show_info('CentralNJ MQTT / Radio Setup', text),
+                    THEME['primary']).pack(anchor='w', pady=(12, 4))
         def save():
             for (section, key), var in fields.items():
                 if not config.has_section(section):
