@@ -5,7 +5,7 @@ import configparser
 import sqlite3
 from tkinter import ttk
 from sitdown_utilities import format_node
-from sitdown_online import WeatherDesk
+from sitdown_online import WeatherDesk, ActivityCounter
 import runpy
 import shutil
 from pathlib import Path
@@ -523,6 +523,20 @@ class SitdownApp:
                 )
         self.styled_button(page, 'SAVE — APPLY ON NEXT SERVER START',
                            save, THEME['connected'], compact=True).pack(side='bottom', pady=6)
+        def check_mqtt_configuration():
+            """Validate current unsaved form values offline, without opening a connection."""
+            preview = configparser.ConfigParser()
+            preview.add_section('mqtt_monitor')
+            for key, _label, _default in sections['mqtt_monitor']:
+                var = fields[('mqtt_monitor', key)]
+                preview.set('mqtt_monitor', key,
+                            str(var.get()).lower() if isinstance(var, tk.BooleanVar) else var.get())
+            report = ActivityCounter(preview).diagnostics()
+            self.show_info('MQTT Configuration Check', report)
+
+        self.styled_button(page, 'CHECK MQTT CONFIGURATION',
+                           check_mqtt_configuration,
+                           THEME['panel'], compact=True).pack(side='bottom', pady=4)
         self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
                            lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
                            THEME['primary'], compact=True).pack(side='bottom', pady=4)
