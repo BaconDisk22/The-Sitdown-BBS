@@ -54,6 +54,38 @@ class DesktopTests(unittest.TestCase):
                     self.assertIsNone(app.supervisor)
                     app.status.set.assert_called_with("Stopped")
 
+    def test_recovery_backoff_is_capped_and_opt_in(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.auto_restart = Mock(get=Mock(return_value=True))
+        app.demo = Mock(get=Mock(return_value=False))
+        app.retry_count = 0
+        app.status = Mock()
+        app.log = Mock()
+        with patch.object(desktop.time, "monotonic", return_value=100):
+            for delay in (2, 4, 8, 16, 32, 60, 60):
+                app.schedule_recovery()
+                self.assertEqual(app.restart_at, 100 + delay)
+        app.restart_at = None
+        app.auto_restart.get.return_value = False
+        app.schedule_recovery()
+        self.assertIsNone(app.restart_at)
+
+    def test_tx_event_does_not_claim_rx_and_disabling_recovery_cancels_timer(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.supervisor = Mock(running=True, last_rx_at=None, link_state="unverified",
+                              rx_count=0, tx_count=1)
+        app.supervisor.poll_events.return_value = [("activity", "tx")]
+        for name in ("radio_activity", "traffic", "uptime", "status", "root", "link_warning"):
+            setattr(app, name, Mock())
+        app.auto_restart = Mock(get=Mock(return_value=False))
+        app.demo = Mock(get=Mock(return_value=False))
+        app.restart_at = 1
+        app.start = Mock()
+        app.poll()
+        app.radio_activity.set.assert_not_called()
+        app.start.assert_not_called()
+        self.assertIsNone(app.restart_at)
+
 
 @unittest.skipUnless(os.environ.get("SITDOWN_UI_TESTS") == "1", "requires a GUI session")
 class DesktopWindowTests(unittest.TestCase):

@@ -82,6 +82,20 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(supervisor.tx_count, 0)
         self.assertIsNone(supervisor.last_link_error)
 
+    def test_structured_sdk_state_is_separate_from_process_ready_and_rx(self):
+        fake = Mock()
+        fake.stdout = iter([
+            'SITDOWN_LINK {"state":"sdk_connected"}\n',
+            'SITDOWN_LINK not-json\n',
+            'SITDOWN_LINK {"state":"disconnected"}\n',
+        ])
+        supervisor = ServerSupervisor(["python"], ".")
+        supervisor._read_output(fake)
+        self.assertEqual(supervisor.link_state, "disconnected")
+        self.assertFalse(supervisor.ready)
+        self.assertIsNone(supervisor.last_rx_at)
+        self.assertEqual(supervisor.rx_count, 0)
+
     def test_uptime_when_stopped(self):
         supervisor = ServerSupervisor(["python"], ".")
         self.assertEqual(supervisor.uptime_seconds(), 0)

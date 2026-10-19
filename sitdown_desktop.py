@@ -183,7 +183,7 @@ class SitdownApp:
         self.styled_button(server, "RESTART SERVER", self.restart, c["background"]).pack(fill="x", pady=3)
         tk.Checkbutton(server, text="Demo mode (no radio)", variable=self.demo,
                        bg=c["panel"], fg=c["text"], selectcolor=c["background"]).pack(anchor="w", pady=(8, 0))
-        tk.Checkbutton(server, text="Restart on crash", variable=self.auto_restart,
+        tk.Checkbutton(server, text="Recover after crash / disconnect", variable=self.auto_restart,
                        bg=c["panel"], fg=c["text"], selectcolor=c["background"]).pack(anchor="w")
 
         personality = card(2, "◈  JERSEY PERSONALITY")
@@ -478,6 +478,7 @@ class SitdownApp:
     def start(self):
         if self.supervisor and self.supervisor.running:
             return
+        self.restart_at = None
         if self.demo.get():
             self.status.set("Demo running — no radio")
             self.radio_activity.set("Radio activity: Demo only")
@@ -515,6 +516,7 @@ class SitdownApp:
             self.supervisor = None
             self.status.set("Start failed")
             self.log(f"Start failed: {exc}")
+            self.schedule_recovery()
 
     def poll(self):
         monitor = self.supervisor
@@ -524,7 +526,7 @@ class SitdownApp:
                     self.log(value)
                 elif kind == "state":
                     self.status.set(value)
-                elif kind == "activity":
+                elif kind == "activity" and value == "rx":
                     self.radio_activity.set("Radio RX observed in BBS logs")
                 elif kind == "link_error":
                     self.link_warning.set("Radio transport error — see server log")
@@ -532,28 +534,44 @@ class SitdownApp:
                     self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
             self.traffic.set(f"Messages observed: RX {monitor.rx_count} / TX {monitor.tx_count}")
             if monitor.running:
+                if monitor.link_state == "disconnected":
+                    self.link_warning.set("Radio disconnected — awaiting SDK recovery (30s)")
+                elif monitor.link_state == "sdk_connected":
+                    self.link_warning.set("SDK session established; continuous link unverified")
                 if monitor.last_rx_at is not None:
                     age = max(0, int(time.time() - monitor.last_rx_at))
                     self.radio_activity.set(f"Radio RX observed {age}s ago")
-                    if not monitor.last_link_error:
+                    if not monitor.last_link_error and monitor.link_state == "unverified":
                         self.link_warning.set("Radio traffic observed (not continuous link health)")
                 self.uptime.set(f"Uptime: {monitor.uptime_seconds()}s")
             elif not monitor.stopping and self.restart_at is None:
                 code = monitor.process.poll() if monitor.process else "unknown"
                 self.log(f"BBS process exited ({code}).")
                 self.status.set("Disconnected / process stopped")
-                if self.auto_restart.get() and not self.demo.get():
-                    self.retry_count += 1
-                    delay = min(60, 2 ** min(self.retry_count, 6))
-                    self.restart_at = time.monotonic() + delay
-                    self.log(f"Retrying process in {delay}s (attempt {self.retry_count}).")
+                self.schedule_recovery()
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
+                self.uptime.set("Uptime: 0s")
+                self.link_warning.set("Radio link: Disconnected / process stopped")
+        if self.restart_at is not None and (not self.auto_restart.get() or self.demo.get()):
+            self.restart_at = None
+            self.status.set("Stopped — recovery cancelled")
+        if self.restart_at is not None:
+            remaining = max(0, int(self.restart_at - time.monotonic()) + 1)
+            self.status.set(f"Retry in {remaining}s (attempt {self.retry_count})")
         if self.restart_at is not None and time.monotonic() >= self.restart_at:
             self.restart_at = None
             self.start()
         if self.root.winfo_exists():
             self.root.after(500, self.poll)
+
+    def schedule_recovery(self):
+        if self.auto_restart.get() and not self.demo.get():
+            self.retry_count += 1
+            delay = min(60, 2 ** min(self.retry_count, 6))
+            self.restart_at = time.monotonic() + delay
+            self.log(f"Retrying process in {delay}s (attempt {self.retry_count}).")
+            self.status.set(f"Retry in {delay}s (attempt {self.retry_count})")
 
     def restart(self):
         """Restart on demand without scheduling crash recovery."""
@@ -577,7 +595,8 @@ class SitdownApp:
             f"Link warning: {self.link_warning.get()}",
             f"Automatic restart: {self.auto_restart.get()}",
             f"Restart attempts: {self.retry_count}",
-            "Radio connection verified: Log-observed activity only, not continuous link health",
+            f"SDK radio session: {monitor.link_state if monitor else 'unverified'}",
+            "Continuous radio reachability / mesh delivery verified: No",
         ]
         self.root.clipboard_clear()
         self.root.clipboard_append("\n".join(details))
