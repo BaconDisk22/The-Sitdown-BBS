@@ -475,27 +475,6 @@ class SitdownApp:
                     tk.Label(frame, text=label, bg=THEME['panel'], fg=THEME['text']).pack(anchor='w', pady=(8, 2))
                     ttk.Entry(frame, textvariable=var, show='*' if key == 'password' else '', style='Desk.TEntry').pack(fill='x', pady=(3, 8))
                 fields[(section, key)] = var
-            if section == 'mqtt_monitor':
-                guide = (
-                    "CENTRALNJ / TWO-WAY RADIO SETUP\n"
-                    "1. Configure the CentralNJ channel and its PSK on your Meshtastic radio.\n"
-                    "2. Configure the radio MQTT broker: mqtt.meshtastic.org.\n"
-                    "3. Enter broker credentials on the radio, not in a public repository.\n"
-                    "4. Enable MQTT uplink and downlink for the CentralNJ channel on the radio.\n"
-                    "5. Set the radio MQTT root topic to the correct regional topic.\n"
-                    "6. Connect the radio to this BBS by USB or TCP and test with a small message.\n\n"
-                    "The MQTT counter above is separate: it only counts incoming broker "
-                    "traffic and cannot decrypt or send Meshtastic messages. "
-                    "Leave it disabled unless you explicitly want monitoring. "
-                    "Avoid subscribing broadly to msh/US/# on limited hardware; "
-                    "start with the narrowest authorized topic. "
-                    "Two-way delivery requires radio and channel configuration; "
-                    "this screen does not activate radio MQTT automatically."
-                )
-                self.styled_button(
-                    frame, 'CENTRALNJ SETUP GUIDE',
-                    lambda text=guide: self.show_info('CentralNJ MQTT / Radio Setup', text),
-                    THEME['primary']).pack(anchor='w', pady=(12, 4))
         def save():
             for (section, key), var in fields.items():
                 if not config.has_section(section):
@@ -526,7 +505,29 @@ class SitdownApp:
                 self.show_info('Settings saved', 'Restart the server to apply these settings.')
             except (ValueError, OSError) as exc:
                 self.show_info('Settings not saved', str(exc))
-        self.styled_button(page, 'SAVE — APPLY ON NEXT SERVER START', save, THEME['connected']).pack(pady=10)
+        guide = (
+                    "CENTRALNJ / TWO-WAY RADIO SETUP\n"
+                    "1. Configure the CentralNJ channel and its PSK on your Meshtastic radio.\n"
+                    "2. Configure the radio MQTT broker: mqtt.meshtastic.org.\n"
+                    "3. Enter broker credentials on the radio, not in a public repository.\n"
+                    "4. Enable MQTT uplink and downlink for the CentralNJ channel on the radio.\n"
+                    "5. Set the radio MQTT root topic to the correct regional topic.\n"
+                    "6. Connect the radio to this BBS by USB or TCP and test with a small message.\n\n"
+                    "The MQTT counter above is separate: it only counts incoming broker "
+                    "traffic and cannot decrypt or send Meshtastic messages. "
+                    "Leave it disabled unless you explicitly want monitoring. "
+                    "Avoid subscribing broadly to msh/US/# on limited hardware; "
+                    "start with the narrowest authorized topic. "
+                    "Two-way delivery requires radio and channel configuration; "
+                    "this screen does not activate radio MQTT automatically."
+                )
+        actions = tk.Frame(page, bg=THEME['background'])
+        actions.pack(fill='x', pady=8)
+        self.styled_button(actions, 'CENTRALNJ SETUP GUIDE',
+                           lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
+                           THEME['primary'], compact=True).pack(side='left', padx=(0, 8))
+        self.styled_button(actions, 'SAVE — APPLY ON NEXT SERVER START',
+                           save, THEME['connected'], compact=True).pack(side='right')
 
     def layout_navigation(self, event):
         """Wrap measured controls so every action survives font/window resizing."""
