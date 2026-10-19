@@ -456,7 +456,7 @@ class SitdownApp:
         sections = {
             'startup': [('enabled', 'Broadcast on server start', 'bool'), ('channel', 'Channel index', '0'), ('message', 'Custom welcome (blank = personality)', '')],
             'announcements': [('admin_nodes', 'Remote administrator node IDs (comma separated)', '')],
-            'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.7357'), ('longitude', 'Longitude', '-74.1724')],
+            'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.20'), ('longitude', 'Longitude', '-74.50')],
             'mqtt_monitor': [('enabled', 'Enable MQTT counter', 'bool'), ('host', 'Broker hostname', ''), ('topic', 'Subscription topic', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
             'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
         }
