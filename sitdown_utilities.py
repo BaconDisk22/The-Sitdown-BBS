@@ -5,6 +5,7 @@ import re
 import threading
 from sitdown_personality import Personality
 from sitdown_online import WeatherDesk, ActivityCounter
+from sitdown_broadcasts import BroadcastStore
 
 
 def node_id(value):
@@ -47,11 +48,12 @@ def format_node(row):
 
 
 class LocalUtilities:
-    def __init__(self, interface, config=None):
+    def __init__(self, interface, config=None, *, state_path='sitdown-broadcasts.db'):
         self.interface = interface
         self.config = config if config is not None else configparser.ConfigParser()
         self.lock = threading.RLock()
         self.startup_attempted = False
+        self.broadcasts = BroadcastStore(state_path)
         self.weather = WeatherDesk(self.config)
         self.mqtt = ActivityCounter(self.config)
 
@@ -65,38 +67,75 @@ class LocalUtilities:
         identity = node_id(sender)
         return identity is not None and identity in {node_id(a.strip()) for a in admins if a.strip()}
 
-    def announce(self, channel, text, *, sender=None, local=False):
+    def validate_announcement(self, channel, text, *, sender=None, local=False):
         if not local and not self.is_admin(sender):
             raise ValueError('Announcements require a configured administrator node.')
         if isinstance(channel, bool) or not isinstance(channel, int):
             raise ValueError('Select a numeric channel index.')
         if channel not in {ch['index'] for ch in self.channels()}:
             raise ValueError('Channel is disabled or unavailable on this radio.')
-        if not text.strip() or len(text.encode('utf-8')) > 200:
+        if not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > 200:
             raise ValueError('Announcement must contain 1–200 UTF-8 bytes.')
+    def announce(self, channel, text, *, sender=None, local=False):
+        self.validate_announcement(channel, text, sender=sender, local=local)
         with self.lock:
+            cooldown = max(60, self.config.getint('announcements', 'cooldown_seconds', fallback=60))
+            if not self.broadcasts.reserve('announcement', cooldown):
+                raise ValueError('Broadcast cooldown active; wait before sending again.')
             self.interface.sendText(text=text, destinationId=0xffffffff,
                                     channelIndex=channel, wantAck=False, wantResponse=False)
         return 'Announcement submitted to radio (delivery unconfirmed).'
 
-    def startup(self):
-        """One attempt per process start; disabled by default."""
-        if self.startup_attempted:
-            return False
+    def schedule(self, when, channel, text, *, sender=None, local=False):
+        self.validate_announcement(channel, text, sender=sender, local=local)
+        identity = self.broadcasts.schedule(when, channel, text, node_id(sender), local)
+        return f'Announcement {identity} scheduled; delivery unconfirmed.'
+
+    def cancel(self, identity, *, sender=None, local=False):
+        if not local and not self.is_admin(sender):
+            raise ValueError('Announcements require a configured administrator node.')
+        return 'Cancelled.' if self.broadcasts.cancel(int(identity)) else 'No pending announcement with that ID.'
+
+    def tick(self):
+        row = self.broadcasts.claim_due()
+        if not row:
+            return
+        identity, due, channel, text, sender, local = row
         try:
-            if not self.config.getboolean('startup', 'enabled', fallback=False):
-                return False
-            self.startup_attempted = True
-            style = Personality(public_mode=self.config.get('personality', 'public_mode', fallback='clean'),
-                                allow_public_profanity=self.config.getboolean(
-                                    'personality', 'allow_public_profanity', fallback=False))
-            text = self.config.get('startup', 'message', fallback='').strip() or style.message('welcome', public=True)
-            self.announce(self.config.getint('startup', 'channel', fallback=0), text, local=True)
-            logging.info('Startup broadcast submitted (delivery unconfirmed).')
-            return True
+            if self.broadcasts.clock() - due > 60:
+                raise ValueError('Expired; missed announcements are not replayed.')
+            self.announce(channel, text, sender=sender, local=bool(local))
+            self.broadcasts.finish(identity, 'submitted')
+            logging.info('Scheduled announcement %s submitted; delivery unconfirmed.', identity)
         except Exception:
-            logging.exception('Startup broadcast failed; BBS remains available.')
-            return False
+            self.broadcasts.finish(identity, 'skipped')
+            logging.warning('Scheduled announcement %s skipped; inspect authorization, channel and cooldown.', identity)
+
+    def startup(self):
+        """At most one attempt per process, with a persistent restart cooldown."""
+        with self.lock:
+            if self.startup_attempted:
+                return False
+            try:
+                if not self.config.getboolean('startup', 'enabled', fallback=False):
+                    return False
+                self.startup_attempted = True
+                style = Personality(public_mode=self.config.get('personality', 'public_mode', fallback='clean'),
+                                    allow_public_profanity=self.config.getboolean(
+                                        'personality', 'allow_public_profanity', fallback=False))
+                text = self.config.get('startup', 'message', fallback='').strip() or style.message('welcome', public=True)
+                channel = self.config.getint('startup', 'channel', fallback=0)
+                self.validate_announcement(channel, text, local=True)
+                cooldown = max(300, self.config.getint('startup', 'cooldown_seconds', fallback=3600))
+                if not self.broadcasts.reserve('startup', cooldown):
+                    logging.info('Startup broadcast suppressed by persistent cooldown.')
+                    return False
+                self.announce(channel, text, local=True)
+                logging.info('Startup broadcast submitted (delivery unconfirmed).')
+                return True
+            except Exception:
+                logging.exception('Startup broadcast failed; BBS remains available.')
+                return False
 
     def command(self, message, sender):
         command, _, argument = message.strip().partition(' ')
@@ -113,6 +152,18 @@ class LocalUtilities:
                 return 'No matching nodes in the radio database.'
             return '\n\n'.join(format_node(row) for row in results[:3]) + (
                 f'\n{len(results)} matches; refine your search.' if len(results) > 3 else '')
+        if command in ('/schedule', '/cancelannouncement', '/announcements'):
+            if not self.is_admin(sender):
+                return 'Announcements require a configured administrator node.'
+            try:
+                if command == '/cancelannouncement':
+                    return self.cancel(argument, sender=sender)
+                if command == '/announcements':
+                    return str(self.broadcasts.pending()) if self.broadcasts.pending() else 'No pending announcements.'
+                when, channel, text = argument.split(' ', 2)
+                return self.schedule(when, int(channel), text, sender=sender)
+            except ValueError as exc:
+                return f'{exc} Usage: /schedule <ISO timestamp with timezone> <channel> <text>'
         if command == '/announce':
             if not self.is_admin(sender):
                 return 'Announcements require a configured administrator node.'
