@@ -82,6 +82,15 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(supervisor.tx_count, 0)
         self.assertIsNone(supervisor.last_link_error)
 
+    def test_sdk_state_is_not_process_ready_or_rx(self):
+        fake = Mock()
+        fake.stdout = iter(['SITDOWN_LINK {"state":"sdk_connected"}\n', 'SITDOWN_LINK {"state":"disconnected"}\n'])
+        supervisor = ServerSupervisor(["python"], ".")
+        supervisor._read_output(fake)
+        self.assertEqual(supervisor.link_state, "disconnected")
+        self.assertFalse(supervisor.ready)
+        self.assertEqual(supervisor.rx_count, 0)
+
     def test_uptime_when_stopped(self):
         supervisor = ServerSupervisor(["python"], ".")
         self.assertEqual(supervisor.uptime_seconds(), 0)
