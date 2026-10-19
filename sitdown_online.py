@@ -130,6 +130,29 @@ class ActivityCounter:
             else:
                 self.overflow += 1
 
+    def diagnostics(self):
+        """Credential-free summary of the optional MQTT counter configuration."""
+        c = self.config
+        try:
+            enabled = c.getboolean('mqtt_monitor', 'enabled', fallback=False)
+        except ValueError:
+            return 'The Wire: invalid enable setting; MQTT monitor not ready.'
+        if not enabled:
+            return 'The Wire: MQTT monitor disabled (radio messaging unaffected).'
+        host = c.get('mqtt_monitor', 'host', fallback='').strip()
+        topic = c.get('mqtt_monitor', 'topic', fallback='').strip()
+        if not host or not topic:
+            return 'The Wire: configure both broker hostname and a scoped subscription topic.'
+        if topic in ('#', 'msh/#', 'msh/US/#'):
+            return 'The Wire: broad MQTT subscription; prefer a narrowly scoped authorized topic.'
+        try:
+            port = c.getint('mqtt_monitor', 'port', fallback=8883)
+            if not 1 <= port <= 65535:
+                raise ValueError()
+        except ValueError:
+            return 'The Wire: invalid MQTT port (must be 1–65535).'
+        return 'The Wire: monitor configured; status: ' + self.status + '. This counter cannot send radio messages.'
+
     def snapshot(self):
         with self.lock:
             return {'status': self.status, 'total': self.total, 'overflow': self.overflow,
