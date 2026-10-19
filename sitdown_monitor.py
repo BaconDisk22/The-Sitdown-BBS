@@ -3,11 +3,13 @@
 This supervises the BBS *process*, not the radio link. A running process is
 not proof of a successful radio connection.
 """
+import json
 import queue
 import re
 import subprocess
 import threading
 import time
+from sitdown_link import PREFIX
 
 NODE_PATTERN = re.compile(r"Received message from user '([^']+)' \((![0-9a-fA-F]+)\)")
 TX_PATTERN = re.compile(r"Sending message to user", re.I)
@@ -30,6 +32,7 @@ class ServerSupervisor:
         self.rx_count = 0
         self.tx_count = 0
         self.last_link_error = None
+        self.link_state = "unverified"
 
     def start(self):
         if self.process and self.process.poll() is None:
@@ -41,6 +44,7 @@ class ServerSupervisor:
         self.rx_count = 0
         self.tx_count = 0
         self.last_link_error = None
+        self.link_state = "unverified"
         self.process = self.factory(
             self.command, cwd=self.cwd, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -53,6 +57,14 @@ class ServerSupervisor:
         try:
             for raw in process.stdout:
                 line = raw.rstrip("\r\n")
+                if line.startswith(PREFIX):
+                    try:
+                        state = json.loads(line[len(PREFIX):])["state"]
+                        if state in ("sdk_connected", "disconnected"):
+                            self.link_state = state
+                            self.events.put(("link_state", state))
+                    except (ValueError, KeyError, TypeError):
+                        pass
                 if READY_PATTERN.search(line):
                     self.ready = True
                     self.events.put(("state", "Server initialized (radio link unverified)"))
@@ -97,6 +109,7 @@ class ServerSupervisor:
         self.started_at = None
         self.ready = False
         self.last_rx_at = None
+        self.link_state = "unverified"
 
     def poll_events(self, limit=100):
         items = []

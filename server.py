@@ -21,6 +21,7 @@ from js8call_integration import JS8CallClient
 from message_processing import on_receive
 from pubsub import pub
 from sitdown_utilities import LocalUtilities
+from sitdown_link import RadioLinkMonitor
 
 # General logging
 logging.basicConfig(
@@ -78,15 +79,23 @@ def main():
 
     interface.sitdown.startup()
 
+    link = RadioLinkMonitor(interface)
     try:
         while True:
+            if link.check():
+                logging.error("Radio session disconnected for 30s; exiting for supervisor recovery")
+                return 1
             time.sleep(1)
 
     except KeyboardInterrupt:
         logging.info("Shutting down the server...")
-        interface.close()
-        if js8call_client.connected:
-            js8call_client.close()
+    finally:
+        pub.unsubscribe(receive_packet, system_config['mqtt_topic'])
+        try:
+            interface.close()
+        finally:
+            if js8call_client.connected:
+                js8call_client.close()
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
