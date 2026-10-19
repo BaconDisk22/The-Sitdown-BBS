@@ -34,6 +34,35 @@ class RadioLinkTests(unittest.TestCase):
         self.clock.return_value = 1030
         self.assertTrue(self.monitor.check())
 
+    def test_disconnect_flap_restarts_full_grace_period(self):
+        self.interface.isConnected.set()
+        self.monitor.check()
+        self.interface.isConnected.clear()
+        self.clock.return_value = 10
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 35
+        self.interface.isConnected.set()
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 40
+        self.interface.isConnected.clear()
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 69
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 70
+        self.assertTrue(self.monitor.check())
+
+    def test_exact_boundary_and_silent_connection(self):
+        self.interface.isConnected.set()
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 86400
+        self.assertFalse(self.monitor.check())
+        self.interface.isConnected.clear()
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 86429.99
+        self.assertFalse(self.monitor.check())
+        self.clock.return_value = 86430
+        self.assertTrue(self.monitor.check())
+
     def test_state_only_emitted_on_transition(self):
         self.monitor.check()
         self.monitor.check()
