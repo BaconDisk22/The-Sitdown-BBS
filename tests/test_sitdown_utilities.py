@@ -1,5 +1,7 @@
 import configparser
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from sitdown_utilities import LocalUtilities, lookup_nodes
@@ -14,7 +16,9 @@ class UtilityTests(unittest.TestCase):
             '!00000002': {}})
         self.radio.localNode.channels = [SimpleNamespace(role=1, settings=SimpleNamespace(name='Local')),
                                          SimpleNamespace(role=0, settings=SimpleNamespace(name='Disabled'))]
-        self.service = LocalUtilities(self.radio, self.config)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.service = LocalUtilities(self.radio, self.config, state_path=Path(self.temp.name) / 'state.db')
 
     def test_full_lookup_ids_names_incomplete_records(self):
         for query in ('!abcdef01', 'abcdef01', '2882400001', 'nj01', 'north jersey'):

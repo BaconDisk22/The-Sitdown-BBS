@@ -14,6 +14,7 @@ other BBS servers listed in the config.ini file.
 
 import logging
 import time
+from pathlib import Path
 
 from config_init import initialize_config, get_interface, init_cli_parser, merge_config
 from db_operations import initialize_database
@@ -58,7 +59,8 @@ def main():
     interface = get_interface(system_config)
     interface.bbs_nodes = system_config['bbs_nodes']
     interface.allowed_nodes = system_config['allowed_nodes']
-    interface.sitdown = LocalUtilities(interface, system_config['config'])
+    interface.sitdown = LocalUtilities(interface, system_config['config'],
+        state_path=Path(config_file or 'config.ini').resolve().with_name('sitdown-broadcasts.db'))
 
     logging.info(f"THE SITDOWN BBS is running on {system_config['interface_type']} interface...")
 
@@ -81,6 +83,7 @@ def main():
     try:
         while True:
             time.sleep(1)
+            interface.sitdown.tick()
 
     except KeyboardInterrupt:
         logging.info("Shutting down the server...")
