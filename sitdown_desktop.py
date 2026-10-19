@@ -37,6 +37,8 @@ class SitdownApp:
         self.node_count = tk.StringVar(value='Observed nodes: 0')
         self.uptime = tk.StringVar(value='Uptime: 0s')
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
+        self.traffic = tk.StringVar(value='Messages observed: RX 0 / TX 0')
+        self.link_warning = tk.StringVar(value='TCP health: Not checked')
         self.demo = tk.BooleanVar(value=False)
         self.connection = tk.StringVar(value="serial")
         self.address = tk.StringVar()
@@ -173,6 +175,8 @@ class SitdownApp:
         self.refresh_status_indicator()
         tk.Label(server, textvariable=self.radio_activity, bg=c["panel"], fg=c["highlight"], wraplength=250).pack(anchor="w")
         tk.Label(server, textvariable=self.node_count, bg=c["panel"], fg=c["text"]).pack(anchor="w")
+        tk.Label(server, textvariable=self.traffic, bg=c["panel"], fg=c["text"]).pack(anchor="w")
+        tk.Label(server, textvariable=self.link_warning, bg=c["panel"], fg=c["highlight"], wraplength=260).pack(anchor="w")
         tk.Label(server, textvariable=self.uptime, bg=c["panel"], fg=c["text"]).pack(anchor="w", pady=(4, 10))
         self.styled_button(server, "START THE SITDOWN", self.start, c["connected"]).pack(fill="x", pady=3)
         self.styled_button(server, "STOP SERVER", self.stop, c["primary"]).pack(fill="x", pady=3)
@@ -504,6 +508,8 @@ class SitdownApp:
             self.status.set("Starting...")
             if hasattr(self, "radio_activity"):
                 self.radio_activity.set("Radio activity: Awaiting messages")
+            self.traffic.set("Messages observed: RX 0 / TX 0")
+            self.link_warning.set("TCP health: Awaiting observed traffic" if self.connection.get() == "tcp" else "Radio link: Unverified")
             self.log("Starting The Sitdown BBS...")
         except OSError as exc:
             self.supervisor = None
@@ -520,12 +526,17 @@ class SitdownApp:
                     self.status.set(value)
                 elif kind == "activity":
                     self.radio_activity.set("Radio RX observed in BBS logs")
+                elif kind == "link_error":
+                    self.link_warning.set("Radio transport error — see server log")
                 elif kind == "node":
                     self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
+            self.traffic.set(f"Messages observed: RX {monitor.rx_count} / TX {monitor.tx_count}")
             if monitor.running:
                 if monitor.last_rx_at is not None:
                     age = max(0, int(time.time() - monitor.last_rx_at))
                     self.radio_activity.set(f"Radio RX observed {age}s ago")
+                    if not monitor.last_link_error:
+                        self.link_warning.set("Radio traffic observed (not continuous link health)")
                 self.uptime.set(f"Uptime: {monitor.uptime_seconds()}s")
             elif not monitor.stopping and self.restart_at is None:
                 code = monitor.process.poll() if monitor.process else "unknown"
@@ -562,6 +573,10 @@ class SitdownApp:
             f"Observed nodes: {len(monitor.nodes) if monitor else 0}",
             f"Uptime: {monitor.uptime_seconds() if monitor else 0}s",
             f"Radio activity: {self.radio_activity.get()}",
+            f"Traffic: {self.traffic.get()}",
+            f"Link warning: {self.link_warning.get()}",
+            f"Automatic restart: {self.auto_restart.get()}",
+            f"Restart attempts: {self.retry_count}",
             "Radio connection verified: Log-observed activity only, not continuous link health",
         ]
         self.root.clipboard_clear()
@@ -579,6 +594,8 @@ class SitdownApp:
         if hasattr(self, "radio_activity"):
             self.radio_activity.set("Radio activity: Process stopped")
         self.uptime.set("Uptime: 0s")
+        self.traffic.set("Messages observed: RX 0 / TX 0")
+        self.link_warning.set("Radio link: Unverified")
         self.log("Fuggedaboutit. Server stopped.")
 
     def commands(self):
