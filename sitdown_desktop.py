@@ -14,6 +14,7 @@ import sys
 import time
 import tkinter as tk
 from tkinter import messagebox, filedialog
+from sitdown_backup import create_backup_archive
 from sitdown_monitor import ServerSupervisor
 from sitdown_personality import Personality
 import zipfile
@@ -890,11 +891,14 @@ class SitdownApp:
                      initialfile="sitdown-backup.zip", filetypes=[("Zip archive", "*.zip")])
         if not destination:
             return
-        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in [CONFIG, self.config_path(), *self.config_path().parent.glob("*.db")]:
-                if path.exists() and path.is_file():
-                    archive.write(path, path.name)
-        self.log("The Books: backup saved. Treat backups as sensitive; they may contain messages and keys.")
+        try:
+            database_paths = set(DATA.glob("*.db")) | set(self.config_path().parent.glob("*.db"))
+            create_backup_archive(destination, [CONFIG, self.config_path()], sorted(database_paths))
+        except (OSError, ValueError, sqlite3.DatabaseError, zipfile.BadZipFile) as exc:
+            self.log(f"The Books: backup failed: {exc}")
+            self.show_info("Backup failed", f"No new backup was saved. {exc}")
+            return
+        self.log("The Books: verified backup saved. Treat backups as sensitive; they may contain messages and keys.")
 
     def close(self):
         self.stop()
