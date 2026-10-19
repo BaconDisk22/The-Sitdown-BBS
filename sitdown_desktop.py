@@ -508,8 +508,10 @@ class SitdownApp:
             self.status.set("Starting...")
             if hasattr(self, "radio_activity"):
                 self.radio_activity.set("Radio activity: Awaiting messages")
-            self.traffic.set("Messages observed: RX 0 / TX 0")
-            self.link_warning.set("TCP health: Awaiting observed traffic" if self.connection.get() == "tcp" else "Radio link: Unverified")
+            if hasattr(self, "traffic"):
+                self.traffic.set("Messages observed: RX 0 / TX 0")
+            if hasattr(self, "link_warning"):
+                self.link_warning.set("TCP health: Awaiting observed traffic" if self.connection.get() == "tcp" else "Radio link: Unverified")
             self.log("Starting The Sitdown BBS...")
         except OSError as exc:
             self.supervisor = None
@@ -594,8 +596,10 @@ class SitdownApp:
         if hasattr(self, "radio_activity"):
             self.radio_activity.set("Radio activity: Process stopped")
         self.uptime.set("Uptime: 0s")
-        self.traffic.set("Messages observed: RX 0 / TX 0")
-        self.link_warning.set("Radio link: Unverified")
+        if hasattr(self, "traffic"):
+            self.traffic.set("Messages observed: RX 0 / TX 0")
+        if hasattr(self, "link_warning"):
+            self.link_warning.set("Radio link: Unverified")
         self.log("Fuggedaboutit. Server stopped.")
 
     def commands(self):
