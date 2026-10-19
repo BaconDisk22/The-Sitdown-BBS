@@ -17,6 +17,7 @@ import time
 import queue
 import signal
 import threading
+from pathlib import Path
 from sitdown_control import start_reader, snapshot, handle, emit
 
 from config_init import initialize_config, get_interface, init_cli_parser, merge_config
@@ -62,7 +63,8 @@ def main():
     interface = get_interface(system_config)
     interface.bbs_nodes = system_config['bbs_nodes']
     interface.allowed_nodes = system_config['allowed_nodes']
-    interface.sitdown = LocalUtilities(interface, system_config['config'])
+    interface.sitdown = LocalUtilities(interface, system_config['config'],
+        state_path=Path(config_file or 'config.ini').resolve().with_name('sitdown-broadcasts.db'))
 
     logging.info(f"THE SITDOWN BBS is running on {system_config['interface_type']} interface...")
 
@@ -89,6 +91,7 @@ def main():
     try:
         last_snapshot = 0
         while not stopping.wait(0.25):
+            interface.sitdown.tick()
             if requests is not None:
                 try:
                     emit(handle(interface.sitdown, requests.get_nowait()))
