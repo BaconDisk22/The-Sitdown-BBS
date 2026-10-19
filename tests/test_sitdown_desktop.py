@@ -35,6 +35,8 @@ class DesktopTests(unittest.TestCase):
                 app.address = Mock(get=Mock(return_value=address))
                 app.status = Mock()
                 app.uptime = Mock()
+                app.traffic = Mock()
+                app.link_warning = Mock()
                 app.save = Mock()
                 app.log = Mock()
                 with patch.object(desktop, "ROOT", root), patch.object(desktop, "DATA", root), \
