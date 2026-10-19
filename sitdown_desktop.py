@@ -125,7 +125,9 @@ class SitdownApp:
                             fg=color or c["text"], bg=c["background"])
         button = self.styled_button
         from PIL import Image
-        self.banner_source = Image.open(ROOT / 'assets' / 'jersey-banner.png').convert('RGB')
+        with Image.open(ROOT / 'assets' / 'jersey-banner.png') as banner_file:
+            self.banner_source = banner_file.convert('RGB')
+        self._banner_size = None
         header = tk.Frame(self.root, bg=c['background'])
         header.pack(fill='x', padx=12, pady=(8, 0))
         self.banner = tk.Canvas(header, height=220, bg=c['background'], highlightthickness=0)
@@ -267,9 +269,14 @@ class SitdownApp:
         self.log("Pick a radio, or check Demo mode.")
 
     def render_banner(self, event):
+        """Avoid costly resampling for duplicate Configure events."""
         from PIL import Image, ImageTk
-        self.banner_photo = ImageTk.PhotoImage(self.banner_source.resize(
-            (max(1, event.width), max(1, event.height)), Image.Resampling.LANCZOS))
+        size = (max(1, event.width), max(1, event.height))
+        if size == self._banner_size:
+            return
+        self.banner_photo = ImageTk.PhotoImage(
+            self.banner_source.resize(size, Image.Resampling.LANCZOS))
+        self._banner_size = size
         self.banner.delete('all')
         self.banner.create_image(0, 0, anchor='nw', image=self.banner_photo)
 
