@@ -716,6 +716,7 @@ class SitdownApp:
     def start(self):
         if self.supervisor and self.supervisor.running:
             return
+        self.restart_at = None
         if self.demo.get():
             self.snapshot = {'type': 'snapshot', 'channels': [{'index': 0, 'name': 'DEMO Local'}],
                 'nodes': [{'id': '!abcdef01', 'shortName': 'DEMO', 'longName': 'Demonstration node',
@@ -766,8 +767,10 @@ class SitdownApp:
                     self.log(value)
                 elif kind == "state":
                     self.status.set(value)
-                elif kind == "activity":
+                elif kind == "activity" and value == "rx":
                     self.radio_activity.set("Radio RX observed in BBS logs")
+                elif kind == "link_state":
+                    self.link_warning.set("Radio disconnected — awaiting SDK recovery (30s)" if value == "disconnected" else "SDK session established; continuous link unverified")
                 elif kind == "control":
                     if value.get('type') == 'snapshot':
                         self.snapshot = value
@@ -781,6 +784,8 @@ class SitdownApp:
             if hasattr(self, "traffic"):
                 self.traffic.set(f"Messages observed: RX {monitor.rx_count} / TX {monitor.tx_count}")
             if monitor.running:
+                if monitor.link_state == "disconnected":
+                    self.link_warning.set("Radio disconnected — awaiting SDK recovery (30s)")
                 if monitor.last_rx_at is not None:
                     age = max(0, int(time.time() - monitor.last_rx_at))
                     self.radio_activity.set(f"Radio RX observed {age}s ago")
@@ -789,18 +794,26 @@ class SitdownApp:
                 code = monitor.process.poll() if monitor.process else "unknown"
                 self.log(f"BBS process exited ({code}).")
                 self.status.set("Disconnected / process stopped")
-                if self.auto_restart.get() and not self.demo.get():
-                    self.retry_count += 1
-                    delay = min(60, 2 ** min(self.retry_count, 6))
-                    self.restart_at = time.monotonic() + delay
-                    self.log(f"Retrying process in {delay}s (attempt {self.retry_count}).")
+                self.schedule_recovery()
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
+        if self.restart_at is not None and (not self.auto_restart.get() or self.demo.get()):
+            self.restart_at = None
+            self.status.set("Stopped — recovery cancelled")
         if self.restart_at is not None and time.monotonic() >= self.restart_at:
             self.restart_at = None
             self.start()
         if self.root.winfo_exists():
             self.root.after(500, self.poll)
+
+    def schedule_recovery(self):
+        """Opt-in capped backoff; no retries when recovery is disabled."""
+        if self.auto_restart.get() and not self.demo.get():
+            self.retry_count += 1
+            delay = min(60, 2 ** min(self.retry_count, 6))
+            self.restart_at = time.monotonic() + delay
+            self.log(f"Retrying process in {delay}s (attempt {self.retry_count}).")
+            self.status.set(f"Retry in {delay}s (attempt {self.retry_count})")
 
     def restart(self):
         """Restart on demand without scheduling crash recovery."""
