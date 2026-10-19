@@ -521,13 +521,11 @@ class SitdownApp:
                     "Two-way delivery requires radio and channel configuration; "
                     "this screen does not activate radio MQTT automatically."
                 )
-        actions = tk.Frame(page, bg=THEME['background'])
-        actions.pack(fill='x', pady=8)
-        self.styled_button(actions, 'CENTRALNJ SETUP GUIDE',
+        self.styled_button(page, 'SAVE — APPLY ON NEXT SERVER START',
+                           save, THEME['connected'], compact=True).pack(side='bottom', pady=6)
+        self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
                            lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
-                           THEME['primary'], compact=True).pack(side='left', padx=(0, 8))
-        self.styled_button(actions, 'SAVE — APPLY ON NEXT SERVER START',
-                           save, THEME['connected'], compact=True).pack(side='right')
+                           THEME['primary'], compact=True).pack(side='bottom', pady=4)
 
     def layout_navigation(self, event):
         """Wrap measured controls so every action survives font/window resizing."""
