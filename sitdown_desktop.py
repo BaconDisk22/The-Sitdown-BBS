@@ -751,6 +751,7 @@ class SitdownApp:
             self.supervisor = ServerSupervisor(cmd, DATA if getattr(sys, "frozen", False) else ROOT)
             self.supervisor.start()
             self.status.set("Starting...")
+            self.link_warning.set("Radio link: Unverified — awaiting SDK status")
             if hasattr(self, "radio_activity"):
                 self.radio_activity.set("Radio activity: Awaiting messages")
             self.log("Starting The Sitdown BBS...")
@@ -795,6 +796,7 @@ class SitdownApp:
                 code = monitor.process.poll() if monitor.process else "unknown"
                 self.log(f"BBS process exited ({code}).")
                 self.status.set("Disconnected / process stopped")
+                self.link_warning.set("Radio link: Process stopped — unverified")
                 self.schedule_recovery()
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
@@ -856,6 +858,7 @@ class SitdownApp:
             self.supervisor.stop()
             self.supervisor = None
         self.status.set("Stopped")
+        self.link_warning.set("Radio link: Unverified — server stopped")
         if hasattr(self, "radio_activity"):
             self.radio_activity.set("Radio activity: Process stopped")
         self.uptime.set("Uptime: 0s")
