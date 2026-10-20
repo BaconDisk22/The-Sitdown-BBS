@@ -272,17 +272,17 @@ class SitdownApp:
         footer.pack(side="bottom", fill="x", padx=20, pady=(0, 6))
         tk.Label(footer, text="THE SITDOWN BBS  •  NORTH JERSEY",
                  bg=c["panel"], fg=c["highlight"],
-                 font=("Helvetica", 10, "bold")).pack(side="left")
-        self.styled_button(footer, 'The Books', self.backup, c['panel'], compact=True).pack(side='left', padx=8)
-        self.styled_button(footer, 'Verify Backup', self.verify_backup, c['panel'], compact=True).pack(side='left', padx=4)
-        self.styled_button(footer, 'Diagnostics', self.copy_diagnostics, c['panel'], compact=True).pack(side='left')
+                 font=("Helvetica", 12, "bold")).pack(side="left")
+        self.styled_button(footer, 'The Books', self.backup, '#233139', compact=False).pack(side='left', padx=8)
+        self.styled_button(footer, 'Verify Backup', self.verify_backup, '#233139', compact=False).pack(side='left', padx=4)
+        self.styled_button(footer, 'Diagnostics', self.copy_diagnostics, '#233139', compact=False).pack(side='left')
         tk.Label(footer, textvariable=self.status, bg=c["panel"], fg=c["text"],
-                 font=("Helvetica", 10)).pack(side="right", padx=(14, 0))
+                 font=("Helvetica", 12)).pack(side="right", padx=(14, 0))
         tk.Label(footer, text="SERVER PROCESS:", bg=c["panel"], fg=c["highlight"],
-                 font=("Helvetica", 10, "bold")).pack(side="right")
+                 font=("Helvetica", 12, "bold")).pack(side="right")
         self.output = tk.Text(self.home_page, bg="#01090b", fg="#42ed50", insertbackground=c["text"],
-                              wrap="word", relief="flat", state="disabled", height=7,
-                              font=("Menlo", 11), padx=16, pady=12,
+                              wrap="word", relief="flat", state="disabled", height=12,
+                              font=("Menlo", 14), padx=16, pady=12,
                               highlightbackground="#24404A", highlightthickness=1)
         self.output.pack(fill="both", expand=True, padx=20, pady=(5, 5))
         self.output.tag_configure("event_error", foreground="#FF8B85")
