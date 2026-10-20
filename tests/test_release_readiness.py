@@ -1,10 +1,13 @@
-"""Offline v1.0 release gates. Unknown evidence always blocks release."""
-REQUIRED = ("unit_tests_passed", "intel_mac_dmg_tested", "usb_radio_tested",
-            "tcp_radio_tested", "centralnj_two_way_verified", "credentials_reviewed")
+import unittest
+from sitdown_release_readiness import REQUIRED, evaluate_release
 
 
-def evaluate_release(evidence):
-    if not isinstance(evidence, dict):
-        raise ValueError("evidence must be a mapping")
-    missing = [key for key in REQUIRED if evidence.get(key) is not True]
-    return {"ready": not missing, "missing": missing}
+class ReleaseReadinessTests(unittest.TestCase):
+    def test_unknown_blocks(self):
+        self.assertFalse(evaluate_release({})["ready"])
+
+    def test_all_explicit(self):
+        self.assertTrue(evaluate_release({key: True for key in REQUIRED})["ready"])
+
+    def test_truthy_strings_fail(self):
+        self.assertFalse(evaluate_release({"unit_tests_passed": "true"})["ready"])
