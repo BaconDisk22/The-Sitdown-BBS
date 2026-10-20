@@ -36,7 +36,7 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-mqtt.txt pyserial pyinstaller pillow
       - name: Run unit tests
         run: |
-          python -m compileall -q sitdown_desktop.py sitdown_monitor.py
+          python -m compileall -q sitdown_radio_preflight.py sitdown_desktop.py sitdown_monitor.py
           python -m unittest discover -s tests
           python -m unittest test_sitdown_personality
       - name: Check desktop layout and keyboard navigation

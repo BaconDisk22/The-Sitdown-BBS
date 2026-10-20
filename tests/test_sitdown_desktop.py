@@ -1,5 +1,6 @@
 """Desktop regressions; real-window checks run on the Intel macOS build runner."""
 import os
+import queue
 from pathlib import Path
 import tempfile
 import tkinter as tk
@@ -10,6 +11,49 @@ import sitdown_desktop as desktop
 
 
 class DesktopTests(unittest.TestCase):
+    def test_preflight_snapshots_inputs_and_guards_repeated_checks_and_start(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.preflight_pending = False
+        app.preflight_results = queue.Queue()
+        app.connection = Mock(get=Mock(return_value='tcp'))
+        app.address = Mock(get=Mock(return_value='radio.local'))
+        app.demo = Mock(get=Mock(return_value=False))
+        app.supervisor = None
+        app.restart_at = 123
+        app.log = Mock()
+        app.show_info = Mock()
+        app.save = Mock()
+        with patch.object(desktop.threading, 'Thread') as thread, \
+             patch.object(desktop, 'check_radio', return_value='report') as check:
+            app.check_radio_connection()
+            thread.assert_called_once()
+            self.assertTrue(thread.call_args.kwargs['daemon'])
+            app.address.get.return_value = 'other.local'
+            app.check_radio_connection()
+            app.start()
+            app.save.assert_not_called()
+            thread.call_args.kwargs['target']()
+            check.assert_called_once_with('tcp', 'radio.local', demo=False, busy=True)
+            self.assertEqual(app.preflight_results.get_nowait(), 'report')
+
+    def test_preflight_worker_failure_is_reported_without_tk_calls(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.preflight_pending = False
+        app.preflight_results = queue.Queue()
+        app.connection = Mock(get=Mock(return_value='serial'))
+        app.address = Mock(get=Mock(return_value='/dev/cu.radio'))
+        app.demo = Mock(get=Mock(return_value=False))
+        app.supervisor = None
+        app.restart_at = None
+        app.log = Mock()
+        app.show_info = Mock()
+        with patch.object(desktop.threading, 'Thread') as thread, \
+             patch.object(desktop, 'check_radio', side_effect=RuntimeError('failure')):
+            app.check_radio_connection()
+            thread.call_args.kwargs['target']()
+            self.assertIn('Unverified', app.preflight_results.get_nowait())
+            app.show_info.assert_not_called()
+
     def test_connection_summary_has_real_line_break_for_both_transports(self):
         app = desktop.SitdownApp.__new__(desktop.SitdownApp)
         app.connection_summary = Mock()
@@ -125,6 +169,29 @@ class DesktopWindowTests(unittest.TestCase):
             self.root.update()
             self.assertIsNotNone(self.app.active_page)
             self.assertTrue(self.app.active_page.winfo_ismapped())
+
+    def test_preflight_button_reports_on_ui_thread_without_mutating_settings(self):
+        self.app.demo.set(True)
+        self.app.address.set('radio.local')
+        self.app.connection.set('tcp')
+        with patch.object(desktop.threading, 'Thread') as thread, \
+             patch.object(desktop, 'check_radio', return_value='Protocol unverified') as check, \
+             patch.object(self.app, 'show_info') as show:
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+            button = next(w for w in descendants(self.app.home_page)
+                          if isinstance(w, tk.Label) and w.cget('text') == 'Check Radio Connection')
+            button.event_generate('<Button-1>')
+            self.root.update()
+            thread.call_args.kwargs['target']()
+            self.app.poll()
+            check.assert_called_once_with('tcp', 'radio.local', demo=True, busy=False)
+            show.assert_called_once_with('Radio Connection Preflight', 'Protocol unverified')
+            self.assertFalse(self.app.preflight_pending)
+            self.assertEqual(self.app.address.get(), 'radio.local')
+            self.assertFalse(desktop.CONFIG.exists())
 
     def test_each_page_opens_in_demo_and_returns_home(self):
         self.app.demo.set(True)

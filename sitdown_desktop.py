@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """The Sitdown BBS desktop launcher. Standard-library Tkinter GUI."""
 import json
+import queue
+import threading
+from sitdown_radio_preflight import check_radio
 import configparser
 import sqlite3
 from tkinter import ttk
@@ -41,6 +44,8 @@ class SitdownApp:
         self.root = root
         self.snapshot = {'nodes': [], 'channels': [], 'mqtt': {'status': 'Disabled', 'total': 0, 'topics': []}}
         self.active_page = None
+        self.preflight_results = queue.Queue()
+        self.preflight_pending = False
         self.proc = None
         self.supervisor = None
         self.restart_at = None
@@ -187,6 +192,11 @@ class SitdownApp:
         ttk.Entry(radio, textvariable=self.address, style='Desk.TEntry').pack(fill='x')
         self.styled_button(radio, "Find USB Ports", self.list_ports, "#233139").pack(
             fill="x", pady=(8, 0))
+        self.styled_button(radio, "Check Radio Connection", self.check_radio_connection,
+                           "#233139").pack(fill="x", pady=(8, 0))
+        tk.Label(radio, text="TCP checks briefly use a client slot. Close other radio clients first.",
+                 bg=c['panel'], fg=c['highlight'], wraplength=275,
+                 justify='left').pack(anchor='w', pady=(4, 0))
         self.connection_summary = tk.StringVar()
         tk.Label(radio, textvariable=self.connection_summary, bg=c["panel"],
                  fg=c["text"], justify="left", wraplength=280).pack(anchor="w", pady=(8, 0))
@@ -767,7 +777,30 @@ class SitdownApp:
         except ImportError:
             self.log("pyserial is missing. Install requirements.txt.")
 
+    def check_radio_connection(self):
+        """Snapshot input on Tk's thread; perform only transport checks in a worker."""
+        if self.preflight_pending:
+            self.show_info('Radio Connection Preflight', 'A check is already running.')
+            return
+        connection, address = self.connection.get(), self.address.get()
+        demo = self.demo.get()
+        busy = bool((self.supervisor and self.supervisor.running) or self.restart_at is not None)
+        self.preflight_pending = True
+        self.log('Radio preflight started; no messages or settings will be sent.')
+
+        def worker():
+            try:
+                report = check_radio(connection, address, demo=demo, busy=busy)
+            except Exception:
+                report = 'Radio preflight could not complete. Meshtastic protocol: Unverified.'
+            self.preflight_results.put(report)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def start(self):
+        if getattr(self, 'preflight_pending', False):
+            self.show_info('Radio Connection Preflight', 'Wait for the current check before starting the BBS.')
+            return
         if self.supervisor and self.supervisor.running:
             return
         self.restart_at = None
@@ -816,6 +849,14 @@ class SitdownApp:
             self.schedule_recovery()
 
     def poll(self):
+        try:
+            report = self.preflight_results.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self.preflight_pending = False
+            self.log(report)
+            self.show_info('Radio Connection Preflight', report)
         monitor = self.supervisor
         if monitor:
             for kind, value in monitor.poll_events():
