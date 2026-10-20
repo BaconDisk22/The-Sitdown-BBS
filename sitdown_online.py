@@ -5,6 +5,7 @@ import logging
 import math
 import threading
 import time
+from sitdown_mqtt_recovery_state import RecoveryState
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -69,6 +70,7 @@ class ActivityCounter:
         self.overflow = 0
         self.lock = threading.Lock()
         self.topic = ''
+        self.recovery = RecoveryState()
 
     def start(self, factory=None):
         c = self.config
@@ -86,6 +88,7 @@ class ActivityCounter:
                 factory = lambda: mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             client = factory()
             self.client = client
+            self.recovery = RecoveryState(enabled=True)
             client.on_connect = self._connect
             client.on_disconnect = self._disconnect
             client.on_connect_fail = self._connect_fail
@@ -108,6 +111,7 @@ class ActivityCounter:
 
     def _connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
+            self.recovery.connected()
             result, _ = client.subscribe(self.topic)
             self.status = 'Connected (subscription requested)' if result == 0 else 'Subscription failed'
         else:
@@ -117,6 +121,7 @@ class ActivityCounter:
         self.status = 'Disconnected'
 
     def _connect_fail(self, client, userdata):
+        self.recovery.next_delay()  # telemetry only; Paho owns reconnect timing
         self.status = 'Unavailable — reconnecting'
 
     def _message(self, client, userdata, message):
@@ -164,6 +169,7 @@ class ActivityCounter:
                 '(MQTT only, not radio RX).\n' + '\n'.join(f'{n}: {topic}' for topic, n in data['topics']))
 
     def stop(self, preserve_status=False):
+        self.recovery.stop()
         if self.client is not None:
             try:
                 self.client.disconnect()
