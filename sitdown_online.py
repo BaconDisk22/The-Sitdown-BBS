@@ -160,7 +160,9 @@ class ActivityCounter:
 
     def snapshot(self):
         with self.lock:
-            return {'status': self.status, 'total': self.total, 'overflow': self.overflow,
+            return {'status': self.status, 'recovery_attempts': self.recovery.attempts,
+                    'recovery_stopped': self.recovery.stopped,
+                    'total': self.total, 'overflow': self.overflow,
                     'topics': self.counts.most_common(10)}
 
     def report(self):
