@@ -903,6 +903,19 @@ class SitdownApp:
                 self.schedule_recovery()
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
+        # Only SDK link events count as connected; MQTT monitor is read-only.
+        radio_state = 'unverified'
+        if monitor and monitor.running:
+            if monitor.link_state == 'sdk_connected':
+                radio_state = 'connected'
+            elif monitor.link_state == 'disconnected':
+                radio_state = 'error'
+        mqtt_status = str(self.snapshot.get('mqtt', {}).get('status', 'Disabled')).lower()
+        mqtt_state = ('connected' if mqtt_status.startswith('connected') else
+                      'error' if any(word in mqtt_status for word in
+                                     ('unavailable', 'failed', 'refused', 'disconnected')) else
+                      'disabled' if 'disabled' in mqtt_status else 'unverified')
+        self.update_centralnj_status(radio_state, mqtt_state)
         if self.restart_at is not None and (not self.auto_restart.get() or self.demo.get()):
             self.restart_at = None
             self.status.set("Stopped — recovery cancelled")
