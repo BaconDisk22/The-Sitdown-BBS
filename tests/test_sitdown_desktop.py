@@ -11,6 +11,31 @@ import sitdown_desktop as desktop
 
 
 class DesktopTests(unittest.TestCase):
+    def test_send_safety_stays_blocked_and_does_not_access_credentials_or_transport(self):
+        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+        app.centralnj_send_enabled = Mock()
+        app.demo = Mock()
+        app.show_info = Mock()
+        app.read_config = Mock(side_effect=AssertionError("read credentials"))
+        app.control_request = Mock(side_effect=AssertionError("requested transmission"))
+        app.supervisor = Mock()
+        with patch("socket.socket", side_effect=AssertionError("opened network socket")), \
+             patch.object(desktop, "ServerSupervisor", side_effect=AssertionError("started radio")):
+            for enabled, demo, reason in (
+                (False, False, "Transmission opt-in disabled"),
+                (True, False, "Operator confirmation required"),
+                (False, True, "Demo mode: transmissions disabled"),
+                (True, True, "Demo mode: transmissions disabled"),
+            ):
+                with self.subTest(enabled=enabled, demo=demo):
+                    app.centralnj_send_enabled.get.return_value = enabled
+                    app.demo.get.return_value = demo
+                    self.assertFalse(app.check_centralnj_send_safety())
+                    app.show_info.assert_called_with("CentralNJ Send Safety", reason)
+        app.read_config.assert_not_called()
+        app.control_request.assert_not_called()
+        self.assertEqual(app.supervisor.mock_calls, [])
+
     def test_preflight_snapshots_inputs_and_guards_repeated_checks_and_start(self):
         app = desktop.SitdownApp.__new__(desktop.SitdownApp)
         app.preflight_pending = False
@@ -148,6 +173,21 @@ class DesktopWindowTests(unittest.TestCase):
         self.root.destroy()
         self.config_patch.stop()
         self.directory.cleanup()
+
+    def test_send_preflight_opt_in_defaults_off_and_is_not_restored(self):
+        self.assertFalse(self.app.centralnj_send_enabled.get())
+        self.app.centralnj_send_enabled.set(True)
+        with patch.object(desktop, "DATA", Path(self.directory.name)):
+            self.app.save()
+        self.assertNotIn("centralnj_send_enabled", desktop.CONFIG.read_text())
+        self.root.destroy()
+        self.root = tk.Tk()
+        self.app = desktop.SitdownApp(self.root)
+        self.root.update()
+        self.assertFalse(self.app.centralnj_send_enabled.get())
+        with patch.object(self.app, "show_info") as show:
+            self.assertFalse(self.app.check_centralnj_send_safety())
+            show.assert_called_once_with("CentralNJ Send Safety", "Transmission opt-in disabled")
 
     def test_all_navigation_controls_fit_after_resize_and_larger_fonts(self):
         for size in (12, 18):
