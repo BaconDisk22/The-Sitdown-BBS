@@ -4,6 +4,7 @@ import json
 import queue
 import threading
 from sitdown_radio_preflight import check_radio
+from sitdown_status_view import format_operator_status
 import configparser
 import sqlite3
 from tkinter import ttk
@@ -56,6 +57,7 @@ class SitdownApp:
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
         self.traffic = tk.StringVar(value='Messages observed: RX 0 / TX 0')
         self.link_warning = tk.StringVar(value='Radio link: Unverified')
+        self.centralnj_status = tk.StringVar(value=format_operator_status())
         self.auto_start = tk.BooleanVar(value=False)
         self.demo = tk.BooleanVar(value=False)
         self.connection = tk.StringVar(value="serial")
@@ -211,6 +213,8 @@ class SitdownApp:
         tk.Label(radio, textvariable=self.uptime, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
         tk.Label(radio, textvariable=self.traffic, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
         tk.Label(radio, textvariable=self.link_warning, bg=c['panel'], fg=c['highlight'], wraplength=280).pack(anchor='w', pady=3)
+        tk.Label(radio, textvariable=self.centralnj_status, bg=c['panel'], fg=c['highlight'],
+                 justify='left', wraplength=280).pack(anchor='w', pady=3)
         self.styled_button(radio, 'Disconnect', self.stop, c['primary']).pack(fill='x', pady=(10, 0))
 
         server = card(1, "BBS Server")
@@ -283,6 +287,10 @@ class SitdownApp:
         self.output.tag_configure("event_ready", foreground="#27ff3d")
         self.log(Personality(self.desktop_mouth.get(), self.public_mouth.get(), self.public_profanity.get()).message("welcome"))
         self.log("Pick a radio, or check Demo mode.")
+
+    def update_centralnj_status(self, radio_state='unverified', mqtt_state='disabled'):
+        """Update read-only operator status without claiming delivery."""
+        self.centralnj_status.set(format_operator_status(radio_state, mqtt_state))
 
     def render_banner(self, event):
         """Avoid costly resampling for duplicate Configure events."""
