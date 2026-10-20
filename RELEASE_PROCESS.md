@@ -5,24 +5,34 @@ GitHub Actions now has two paths:
 - **Intel Mac test build**: every push to `main` creates a downloadable workflow artifact for testing.
 - **Publish Intel Mac Release**: on version tags matching `v*` or manual dispatch, builds an Intel x86_64 `.app`, wraps it in a versioned `.dmg`, computes `SHA256SUMS.txt`, and publishes both under **GitHub → Releases**.
 
-## Publishing the Stage 5 beta
+## Publishing an Intel Mac beta
 
-1. Merge the Stage 5 beta.3 release-readiness pull request after CI checks pass. Confirm the Intel Mac test build succeeds on the merged main branch.
+1. Confirm the intended changes are merged and both checks and the Intel Mac test build succeed on that exact main commit. Beta 4 uses PR #98 merge commit `76a994f28777e8eb1537ce3a509af8660da866f2`.
 2. Open **Actions → Publish Intel Mac Release → Run workflow**.
-3. Select the **main** branch, enter `v0.1.0-beta.3` and click **Run workflow**.
-4. Wait for the run to succeed, then open **Releases** and download `The-Sitdown-BBS-Intel-Mac-v0.1.0-beta.3.dmg`.
+3. Select the **main** branch, enter `v0.1.0-beta.4` and click **Run workflow**.
+4. Wait for the run to succeed, then open **Releases** and download `The-Sitdown-BBS-Intel-Mac-v0.1.0-beta.4.dmg`.
 
 Alternatively push an annotated version tag to `main`; a matching tag automatically triggers the workflow. Use new versions for each new release.
 
 **Warning:** Builds are unsigned and unnotarized. macOS Gatekeeper may ask for approval via System Settings → Privacy & Security. Never disable Gatekeeper globally. This pipeline does not verify physical Meshtastic radio behavior or provide an Apple Developer signature. The workflow uses `GITHUB_TOKEN` with `contents: write` and requires GitHub Actions to have permission to publish releases.
 
-## What's included in beta.3
+## What's included in beta.4
 
-- Stage 4 SDK disconnect detection, opt-in recovery countdown and capped retries remain included.\n- Stage 5 dashboard performance improvements: avoid duplicate banner resampling and redundant navigation re-layout.\n- More actionable, credential-safe TCP and USB transport error hints.
+- Non-writing radio preflight: TCP port reachability or USB enumeration, with explicit unverified protocol/delivery status. Demo and active-session checks skip radio contact.
+- CentralNJ setup guidance, credential-free MQTT diagnostics and recovery telemetry, and read-only connection observations.
+- Default-off, session-only operator send preflight. It does not transmit, provide a message composer, or disable the existing BBS responses after an operator starts a real server.
+- Offline acceptance reporting, conservative stable-release gates, safety regressions, and the Home dashboard navigation fix.
+- See `docs/CENTRALNJ_OPERATOR_CHECKLIST.md` and `docs/V1_RELEASE_RUNBOOK.md` for hardware acceptance requirements.
+
+### Retained from beta.3
+
+- Stage 4 SDK disconnect detection, opt-in recovery countdown and capped retries remain included.
+- Stage 5 dashboard performance improvements: avoid duplicate banner resampling and redundant navigation re-layout.
+- More actionable, credential-safe TCP and USB transport error hints.
 - Hardware-free recovery regressions, SQLite-safe ZIP backups, and a **Verify Backup** button using read-only ZIP and database integrity checks.
 - Existing Jersey dashboard, demo mode, weather/MQTT, broadcasts, and radio transport options are retained.
 
-**Limitations:** This beta is unsigned and unnotarized. No physical Meshtastic radio or macOS Tahoe verification is claimed. The Verify Backup feature does not restore or overwrite data. Test the DMG in Demo mode first. Do not overwrite the already published beta.1 or beta.2 releases: always publish a new version.
+**Limitations:** This beta is unsigned and unnotarized. No physical Meshtastic radio or macOS Tahoe verification is claimed. The Verify Backup feature does not restore or overwrite data. Test the DMG in Demo mode first. Do not overwrite the already published beta.1, beta.2, or beta.3 releases: always publish a new version.
 
 ## Release verification checklist
 
