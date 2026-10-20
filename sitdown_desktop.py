@@ -4,6 +4,7 @@ import json
 import queue
 import threading
 from sitdown_radio_preflight import check_radio
+from sitdown_send_preflight import send_preflight
 import configparser
 import sqlite3
 from tkinter import ttk
@@ -56,6 +57,7 @@ class SitdownApp:
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
         self.traffic = tk.StringVar(value='Messages observed: RX 0 / TX 0')
         self.link_warning = tk.StringVar(value='Radio link: Unverified')
+        self.centralnj_send_enabled = tk.BooleanVar(value=False)
         self.auto_start = tk.BooleanVar(value=False)
         self.demo = tk.BooleanVar(value=False)
         self.connection = tk.StringVar(value="serial")
@@ -544,12 +546,23 @@ class SitdownApp:
             report = ActivityCounter(preview).diagnostics()
             self.show_info('MQTT Configuration Check', report)
 
+        self.toggle_row(page, 'Allow operator send preflight (off by default)', self.centralnj_send_enabled)
+        self.styled_button(page, 'CHECK SEND SAFETY',
+                           self.check_centralnj_send_safety, THEME['panel'], compact=True).pack(side='bottom', pady=4)
         self.styled_button(page, 'CHECK MQTT CONFIGURATION',
                            check_mqtt_configuration,
                            THEME['panel'], compact=True).pack(side='bottom', pady=4)
         self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
                            lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
                            THEME['primary'], compact=True).pack(side='bottom', pady=4)
+
+    def check_centralnj_send_safety(self):
+        """Offline preflight only; never sends a packet or publishes MQTT."""
+        allowed, reason = send_preflight(enabled=self.centralnj_send_enabled.get(),
+                                          confirmed=False, radio_ready=False,
+                                          demo_mode=self.demo.get(), message='')
+        self.show_info('CentralNJ Send Safety', reason)
+        return allowed
 
     def layout_navigation(self, event):
         """Wrap measured controls so every action survives font/window resizing."""
