@@ -49,6 +49,7 @@ class SitdownApp:
         self.preflight_results = queue.Queue()
         self.preflight_pending = False
         self.proc = None
+        self.dual_mqtt = None  # Desktop MQTT monitor, independent of radio BBS
         self.supervisor = None
         self.restart_at = None
         self.retry_count = 0
@@ -471,6 +472,22 @@ class SitdownApp:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
 
+    def mqtt_network_action(self, network, connect):
+        """Operator-initiated receive-only broker monitoring, never a radio send."""
+        from sitdown_dual_mqtt import DualMQTTMonitors
+        if not connect:
+            if self.dual_mqtt is not None:
+                self.dual_mqtt.stop(network)
+            self.show_info('Mesh Networks', f'{network}: monitoring stopped.')
+            return
+        # Use saved configuration only; never silently apply unsaved credentials.
+        if self.dual_mqtt is None:
+            self.dual_mqtt = DualMQTTMonitors(self.read_config())
+        ok = self.dual_mqtt.connect(network)
+        state = self.dual_mqtt.snapshot()[network]['status']
+        self.show_info('Mesh Networks', f'{network}: {state}. ' +
+                       ('Receive-only monitoring started.' if ok else 'Check saved Settings.'))
+
     def integration_settings(self, page):
         config = self.read_config()
         tabs = ttk.Notebook(page)
@@ -574,6 +591,14 @@ class SitdownApp:
         self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
                            lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
                            THEME['primary'], compact=True).pack(side='bottom', pady=4)
+        self.styled_button(page, 'CONNECT CENTRALNJ', lambda: self.mqtt_network_action('centralnj', True),
+                           THEME['panel'], compact=True).pack(side='bottom', pady=2)
+        self.styled_button(page, 'DISCONNECT CENTRALNJ', lambda: self.mqtt_network_action('centralnj', False),
+                           THEME['panel'], compact=True).pack(side='bottom', pady=2)
+        self.styled_button(page, 'CONNECT SJMESH', lambda: self.mqtt_network_action('sjmesh', True),
+                           THEME['panel'], compact=True).pack(side='bottom', pady=2)
+        self.styled_button(page, 'DISCONNECT SJMESH', lambda: self.mqtt_network_action('sjmesh', False),
+                           THEME['panel'], compact=True).pack(side='bottom', pady=2)
         # Pack the expandable notebook last so footer controls stay visible on Intel Mac.
         tabs.pack(side='top', fill='both', expand=True)
 
@@ -1103,6 +1128,8 @@ class SitdownApp:
                        "No live files were changed. This is not a restore.")
 
     def close(self):
+        if self.dual_mqtt is not None:
+            self.dual_mqtt.stop()
         self.stop()
         self.root.destroy()
 
