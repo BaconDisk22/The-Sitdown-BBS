@@ -23,7 +23,7 @@ from sitdown_backup import create_backup_archive
 from sitdown_restore_preflight import inspect_backup_archive
 from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
-from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS
+from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS, format_stats
 from sitdown_personality import Personality
 import zipfile
 
@@ -441,7 +441,7 @@ class SitdownApp:
         for network, label in NETWORK_LABELS.items():
             frame = tk.Frame(wire_tabs, bg=THEME['panel'], padx=10, pady=10)
             wire_tabs.add(frame, text=label)
-            self.wire_views[network] = self.page_text(frame, self.mesh_feed.render(network))
+            self.wire_views[network] = self.page_text(frame, self.render_wire(network))
         self.styled_button(counts, 'REFRESH COUNTS', lambda: self.select_page('BBS')).pack(anchor='w')
         data = self.snapshot['mqtt']
         self.page_text(counts, f"MQTT: {data['status']}\nMessages this server session: {data['total']}\n\n"
@@ -485,22 +485,27 @@ class SitdownApp:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
 
+    def render_wire(self, network):
+        if self.dual_mqtt is None:
+            return self.mesh_feed.render(network, status='Not connected')
+        return self.mesh_feed.render(network, status=self.dual_mqtt.snapshot()[network]['status'],
+                                     stats=self.dual_mqtt.ingest_stats()[network])
+
     def drain_mqtt_events(self):
         """Move queued broker results into the per-network feed on the Tk thread."""
-        if self.dual_mqtt is None:
-            return
-        changed = set()
-        for network, result in self.dual_mqtt.drain_events(limit=50):
-            if self.mesh_feed.add(network, result):
-                changed.add(network)
-        for network in changed:
-            box = self.wire_views.get(network)
-            if box is None or not box.winfo_exists():
+        if self.dual_mqtt is not None:
+            for network, result in self.dual_mqtt.drain_events(limit=50):
+                self.mesh_feed.add(network, result)
+        for network, box in self.wire_views.items():
+            if not box.winfo_exists():
+                continue
+            text = self.render_wire(network)
+            if box.get('1.0', 'end-1c') == text:
                 continue
             top = box.yview()[0]
             box.configure(state='normal')
             box.delete('1.0', 'end')
-            box.insert('1.0', self.mesh_feed.render(network))
+            box.insert('1.0', text)
             box.configure(state='disabled')
             box.yview_moveto(top)
 
@@ -527,7 +532,9 @@ class SitdownApp:
             lines = [f'{name}: Not connected; MQTT RX 0' for name in ('centralnj', 'sjmesh')]
         else:
             snapshots = self.dual_mqtt.snapshot()
-            lines = [f"{name}: {snapshots[name]['status']}; MQTT RX {snapshots[name]['total']}"
+            stats = self.dual_mqtt.ingest_stats()
+            lines = [f"{name}: {snapshots[name]['status']}; MQTT RX {snapshots[name]['total']}\n"
+                     f"  {format_stats(stats[name])}"
                      for name in ('centralnj', 'sjmesh')]
         self.show_info('Mesh Network Status', '\n'.join(lines))
 
@@ -1114,6 +1121,10 @@ class SitdownApp:
             f"Recovery attempts: {self.retry_count}",
             "Radio connection verified: Log-observed activity only, not continuous link health",
         ]
+        if self.dual_mqtt is not None:
+            snapshots, stats = self.dual_mqtt.snapshot(), self.dual_mqtt.ingest_stats()
+            details += [f"MQTT {NETWORK_LABELS[name]}: {snapshots[name]['status']}; {format_stats(stats[name])}"
+                        for name in NETWORK_LABELS]
         self.root.clipboard_clear()
         self.root.clipboard_append("\n".join(details))
         self.root.update()

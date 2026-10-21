@@ -1,7 +1,8 @@
 """Offline per-network MQTT feed and desktop drain tests."""
+import configparser
 import unittest
-from unittest.mock import Mock
 import sitdown_desktop as desktop
+from sitdown_dual_mqtt import DualMQTTMonitors
 from sitdown_mqtt_envelope import EnvelopeSummary
 from sitdown_mqtt_feed import MeshFeed, FeedEntry, format_entry
 from sitdown_mqtt_pipeline import ProcessingResult
@@ -56,33 +57,73 @@ class MeshFeedTests(unittest.TestCase):
         self.assertIn('No packets received', MeshFeed().render('sjmesh'))
 
 
+class FakeText:
+    """Minimal stand-in for a read-only Tk Text box."""
+    def __init__(self):
+        self.text, self.writes = '', 0
+    def winfo_exists(self): return True
+    def yview(self): return (0.0, 1.0)
+    def yview_moveto(self, fraction): pass
+    def configure(self, **kwargs): pass
+    def get(self, start, end): return self.text
+    def delete(self, start, end): self.text = ''
+    def insert(self, index, text):
+        self.text, self.writes = text, self.writes + 1
+
+
+def envelope(packet_id=7):
+    from meshtastic.protobuf import mqtt_pb2
+    env = mqtt_pb2.ServiceEnvelope()
+    env.gateway_id, env.channel_id = '!12345678', 'LongFast'
+    env.packet.id = packet_id
+    setattr(env.packet, 'from', 0x7b)
+    env.packet.to = 0xFFFFFFFF
+    env.packet.encrypted = b'ciphertext'
+    return env.SerializeToString()
+
+
 class DesktopDrainTests(unittest.TestCase):
-    def app(self, events):
+    def app(self):
         app = desktop.SitdownApp.__new__(desktop.SitdownApp)
         app.mesh_feed = MeshFeed()
-        app.dual_mqtt = Mock(drain_events=Mock(return_value=events))
-        app.wire_views = {name: Mock(winfo_exists=Mock(return_value=True), yview=Mock(return_value=(0.0, 1.0)))
-                          for name in ('centralnj', 'sjmesh')}
+        app.dual_mqtt = DualMQTTMonitors(configparser.ConfigParser())
+        app.wire_views = {name: FakeText() for name in ('centralnj', 'sjmesh')}
         return app
 
-    def test_drain_updates_only_the_receiving_network_view(self):
-        app = self.app([('centralnj', accepted())])
+    def test_drain_shows_packet_only_in_receiving_network(self):
+        app = self.app()
+        app.dual_mqtt.receive('centralnj', envelope())
         app.drain_mqtt_events()
-        app.dual_mqtt.drain_events.assert_called_once_with(limit=50)
-        inserted = app.wire_views['centralnj'].insert.call_args.args[1]
-        self.assertIn('from !0000007b', inserted)
-        app.wire_views['sjmesh'].insert.assert_not_called()
+        self.assertIn('from !0000007b', app.wire_views['centralnj'].text)
+        self.assertNotIn('!0000007b', app.wire_views['sjmesh'].text)
+        self.assertIn('Accepted 1', app.wire_views['centralnj'].text)
+        self.assertIn('Accepted 0', app.wire_views['sjmesh'].text)
+
+    def test_unchanged_view_is_not_redrawn(self):
+        app = self.app()
+        app.drain_mqtt_events()
+        app.drain_mqtt_events()
+        self.assertEqual(app.wire_views['sjmesh'].writes, 1)
 
     def test_drain_without_open_wire_page_still_records(self):
-        app = self.app([('sjmesh', accepted('sjmesh'))])
+        app = self.app()
         app.wire_views = {}
+        app.dual_mqtt.receive('sjmesh', envelope())
         app.drain_mqtt_events()
         self.assertEqual(len(app.mesh_feed.entries('sjmesh')), 1)
 
-    def test_no_broker_session_is_a_no_op(self):
-        app = desktop.SitdownApp.__new__(desktop.SitdownApp)
+    def test_drain_is_bounded_per_tick(self):
+        app = self.app()
+        for i in range(1, 80):
+            app.dual_mqtt.receive('centralnj', envelope(i))
+        app.drain_mqtt_events()
+        self.assertEqual(len(app.mesh_feed.entries('centralnj')), 50)
+
+    def test_no_broker_session_shows_not_connected(self):
+        app = self.app()
         app.dual_mqtt = None
         app.drain_mqtt_events()
+        self.assertIn('Connection: Not connected', app.wire_views['centralnj'].text)
 
 
 if __name__ == '__main__':

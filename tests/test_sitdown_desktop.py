@@ -249,18 +249,26 @@ class DesktopWindowTests(unittest.TestCase):
             self.app.supervisor.request.assert_not_called()
 
     def test_wire_shows_each_network_separately_and_updates_live(self):
-        from sitdown_mqtt_envelope import EnvelopeSummary
-        from sitdown_mqtt_pipeline import ProcessingResult
-        summary = EnvelopeSummary('!12345678', 'LongFast', 7, 0x7b, 0xFFFFFFFF, True, None)
-        self.app.dual_mqtt = Mock(drain_events=Mock(return_value=[
-            ('centralnj', ProcessingResult(True, 'Encrypted metadata only', 'centralnj', summary))]))
+        import configparser
+        from meshtastic.protobuf import mqtt_pb2
+        from sitdown_dual_mqtt import DualMQTTMonitors
+        env = mqtt_pb2.ServiceEnvelope()
+        env.gateway_id, env.channel_id = '!12345678', 'LongFast'
+        env.packet.id = 7
+        setattr(env.packet, 'from', 0x7b)
+        env.packet.to = 0xFFFFFFFF
+        env.packet.encrypted = b'ciphertext'
+        self.app.dual_mqtt = DualMQTTMonitors(configparser.ConfigParser())
         self.app.select_page('BBS')
         self.root.update()
+        self.app.dual_mqtt.receive('centralnj', env.SerializeToString())
+        self.app.dual_mqtt.receive('centralnj', b'junk')
         self.app.poll()
         central = self.app.wire_views['centralnj'].get('1.0', 'end')
         south = self.app.wire_views['sjmesh'].get('1.0', 'end')
         self.assertIn('from !0000007b', central)
         self.assertIn('ENCRYPTED', central)
+        self.assertIn('Accepted 1 · duplicates 0 · rejected 1 (invalid mqtt envelope 1)', central)
         self.assertNotIn('!0000007b', south)
         self.app.dual_mqtt = None
 

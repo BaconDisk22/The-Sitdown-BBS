@@ -5,6 +5,7 @@ Nothing here publishes, decrypts, bridges, or transmits Meshtastic packets.
 The existing legacy mqtt_monitor remains unchanged.
 """
 import configparser
+from collections import Counter
 from threading import Lock
 from sitdown_mqtt_event_queue import MQTTEventQueue
 from sitdown_mqtt_pipeline import MQTTMessagePipeline
@@ -44,6 +45,7 @@ class DualMQTTMonitors:
         self.events = events or MQTTEventQueue()
         # Each broker runs its own Paho thread; the shared deduplicator is not thread-safe.
         self._pipeline_lock = Lock()
+        self._outcomes = {name: Counter() for name in NETWORKS}
         self.monitors = {
             name: ActivityCounter(network_config(config, name),
                                   sink=lambda payload, n=name: self.receive(n, payload))
@@ -54,8 +56,22 @@ class DualMQTTMonitors:
         """Process one broker payload on its Paho thread and queue the result for the UI."""
         with self._pipeline_lock:
             result = self.pipeline.process(network, payload)
+            if network in self._outcomes:
+                self._outcomes[network]['accepted' if result.accepted else result.reason] += 1
         self.events.push(network, result)
         return result
+
+    def ingest_stats(self):
+        """Per-network processing outcomes since this session started."""
+        with self._pipeline_lock:
+            outcomes = {name: Counter(counts) for name, counts in self._outcomes.items()}
+        stats = {}
+        for name, counts in outcomes.items():
+            accepted = counts.pop('accepted', 0)
+            duplicates = counts.pop('Duplicate packet', 0)
+            stats[name] = {'accepted': accepted, 'duplicates': duplicates,
+                           'rejected': dict(counts), 'queue_dropped': self.events.dropped_for(name)}
+        return stats
 
     def drain_events(self, limit=50):
         """Called from the Tk thread; never blocks on broker I/O."""

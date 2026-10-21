@@ -1,5 +1,5 @@
 """Thread-safe, bounded receive-only MQTT UI event handoff."""
-from collections import deque
+from collections import Counter, deque
 from threading import Lock
 
 
@@ -11,14 +11,16 @@ class MQTTEventQueue:
         self._events = deque()
         self._lock = Lock()
         self.dropped = 0
+        self.dropped_by_network = Counter()
 
     def push(self, network, result):
         if network not in ('centralnj', 'sjmesh'):
             return False
         with self._lock:
             if len(self._events) >= self.capacity:
-                self._events.popleft()
+                lost, _ = self._events.popleft()
                 self.dropped += 1
+                self.dropped_by_network[lost] += 1
             self._events.append((network, result))
         return True
 
@@ -32,3 +34,7 @@ class MQTTEventQueue:
     def stats(self):
         with self._lock:
             return {'queued': len(self._events), 'dropped': self.dropped}
+
+    def dropped_for(self, network):
+        with self._lock:
+            return self.dropped_by_network[network]

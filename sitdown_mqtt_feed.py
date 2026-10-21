@@ -29,6 +29,15 @@ def port_label(portnum):
         return f'port {portnum}'
 
 
+def format_stats(stats):
+    """One line of live ingest health for a network; never includes payloads."""
+    rejected = stats['rejected']
+    detail = ', '.join(f'{reason.lower()} {n}' for reason, n in sorted(rejected.items()))
+    return (f"Accepted {stats['accepted']} · duplicates {stats['duplicates']} · "
+            f"rejected {sum(rejected.values())}" + (f' ({detail})' if detail else '')
+            + f" · queue overflow {stats['queue_dropped']}")
+
+
 def format_entry(entry):
     stamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(entry.received_at))
     result = entry.result
@@ -57,11 +66,16 @@ class MeshFeed:
     def entries(self, network):
         return list(reversed(self._entries[network]))
 
-    def render(self, network):
+    def render(self, network, status=None, stats=None):
         rows = self.entries(network)
         header = (f'{NETWORK_LABELS[network]} — receive-only MQTT activity, newest first '
                   f'(last {len(rows)}).\nMetadata only: sender, channel, gateway, time received, '
-                  'encryption state.\nMQTT activity is not radio RX and is never forwarded.\n\n')
+                  'encryption state.\nMQTT activity is not radio RX and is never forwarded.\n')
+        if status is not None:
+            header += f'Connection: {status}\n'
+        if stats is not None:
+            header += format_stats(stats) + '\n'
+        header += '\n'
         if not rows:
             return header + 'No packets received this session. Connect this network in Settings.'
         return header + '\n'.join(format_entry(row) for row in rows)
