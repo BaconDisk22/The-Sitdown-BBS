@@ -44,6 +44,30 @@ class DualMQTTTests(unittest.TestCase):
         self.assertFalse(clients['sjmesh'].stopped)
         manager.stop()
 
+    def test_manual_connect_does_not_start_other_network(self):
+        config = configparser.ConfigParser()
+        for section in ('mqtt_centralnj', 'mqtt_sjmesh'):
+            config[section] = {'enabled': 'true', 'topic': 'msh/US/2/e/test'}
+        manager = DualMQTTMonitors(config)
+        client = FakeClient()
+        self.assertTrue(manager.connect('centralnj', factory=lambda: client))
+        self.assertEqual(len(client.connected), 1)
+        self.assertEqual(manager.snapshot()['sjmesh']['status'], 'Disabled')
+        manager.stop()
+        self.assertTrue(client.stopped)
+
+    def test_disabled_profile_refuses_manual_connection(self):
+        config = configparser.ConfigParser()
+        config['mqtt_centralnj'] = {'enabled': 'false', 'topic': 'msh/US/2/e/test'}
+        manager = DualMQTTMonitors(config)
+        self.assertFalse(manager.connect('centralnj', factory=lambda: self.fail('unexpected connect')))
+
+    def test_wildcard_topic_refuses_manual_connection(self):
+        config = configparser.ConfigParser()
+        config['mqtt_sjmesh'] = {'enabled': 'true', 'topic': 'msh/US/2/e/#'}
+        manager = DualMQTTMonitors(config)
+        self.assertFalse(manager.connect('sjmesh', factory=lambda: self.fail('unexpected connect')))
+
     def test_broad_topic_never_connects(self):
         config = configparser.ConfigParser()
         config['mqtt_sjmesh'] = {'enabled': 'true', 'topic': 'msh/US/#'}
