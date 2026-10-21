@@ -11,7 +11,18 @@ PREFIX = 'SITDOWN_EVENT '
 
 def emit(payload):
     token = os.environ.get('SITDOWN_CONTROL_TOKEN', '')
-    print(PREFIX + token + ' ' + json.dumps(payload), flush=True)
+    print(PREFIX + token + ' ' + json.dumps(payload, default=_json_safe), flush=True)
+
+
+def _json_safe(value):
+    """Convert protobuf messages and enum-like values for desktop telemetry."""
+    from google.protobuf.json_format import MessageToDict
+    from google.protobuf.message import Message
+    if isinstance(value, Message):
+        return MessageToDict(value, preserving_proto_field_name=True)
+    if isinstance(value, (bytes, bytearray)):
+        return value.hex()
+    raise TypeError(f'Unsupported desktop telemetry type: {type(value).__name__}')
 
 
 def start_reader(stream=None):
