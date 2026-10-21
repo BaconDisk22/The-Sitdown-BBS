@@ -1,0 +1,68 @@
+"""Opt-in, independent, receive-only MQTT monitor sessions.
+
+This foundation does not publish, decode, bridge, or transmit Meshtastic packets.
+The existing legacy mqtt_monitor remains unchanged until UI integration.
+"""
+import configparser
+from sitdown_online import ActivityCounter
+
+NETWORKS = {
+    'centralnj': ('mqtt_centralnj', 'mqtt.meshtastic.org'),
+    'sjmesh': ('mqtt_sjmesh', 'mqtt.sjmesh.net'),
+}
+
+
+def network_config(source, network):
+    """Return an isolated ActivityCounter config; never fill in credentials."""
+    section, default_host = NETWORKS[network]
+    config = configparser.ConfigParser()
+    enabled = source.getboolean(section, 'enabled', fallback=False)
+    topic = source.get(section, 'topic', fallback='').strip()
+    host = source.get(section, 'host', fallback=default_host).strip()
+    config['mqtt_monitor'] = {
+        'enabled': str(enabled).lower(),
+        'host': host,
+        'topic': topic,
+        'tls': source.get(section, 'tls', fallback='true'),
+        'port': source.get(section, 'port', fallback='8883'),
+        'username': source.get(section, 'username', fallback=''),
+        'password': source.get(section, 'password', fallback=''),
+    }
+    return config
+
+
+class DualMQTTMonitors:
+    """Own separate Paho clients and counters for each opt-in broker."""
+
+    def __init__(self, config):
+        self.config = config
+        self.monitors = {
+            name: ActivityCounter(network_config(config, name))
+            for name in NETWORKS
+        }
+
+    def start(self, factories=None):
+        """Start only explicitly enabled networks with configured narrow topics."""
+        factories = factories or {}
+        for name, monitor in self.monitors.items():
+            if not monitor.config.getboolean('mqtt_monitor', 'enabled'):
+                continue
+            # Reject unsafe wildcard scopes before any network connection.
+            topic = monitor.config.get('mqtt_monitor', 'topic').strip()
+            if not topic or '#' in topic or '+' in topic:
+                monitor.status = 'Disabled — explicit narrow topic required'
+                continue
+            monitor.start(factory=factories.get(name))
+
+    def stop(self, network=None):
+        if network is not None:
+            self.monitors[network].stop()
+        else:
+            for monitor in self.monitors.values():
+                monitor.stop()
+
+    def snapshot(self):
+        return {name: monitor.snapshot() for name, monitor in self.monitors.items()}
+
+    def diagnostics(self):
+        return {name: monitor.diagnostics() for name, monitor in self.monitors.items()}
