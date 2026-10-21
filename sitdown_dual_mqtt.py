@@ -1,9 +1,13 @@
 """Opt-in, independent, receive-only MQTT monitor sessions.
 
-This foundation does not publish, decode, bridge, or transmit Meshtastic packets.
-The existing legacy mqtt_monitor remains unchanged until UI integration.
+Incoming payloads are parsed for metadata only and queued for the desktop.
+Nothing here publishes, decrypts, bridges, or transmits Meshtastic packets.
+The existing legacy mqtt_monitor remains unchanged.
 """
 import configparser
+from threading import Lock
+from sitdown_mqtt_event_queue import MQTTEventQueue
+from sitdown_mqtt_pipeline import MQTTMessagePipeline
 from sitdown_online import ActivityCounter
 
 NETWORKS = {
@@ -34,12 +38,28 @@ def network_config(source, network):
 class DualMQTTMonitors:
     """Own separate Paho clients and counters for each opt-in broker."""
 
-    def __init__(self, config):
+    def __init__(self, config, pipeline=None, events=None):
         self.config = config
+        self.pipeline = pipeline or MQTTMessagePipeline()
+        self.events = events or MQTTEventQueue()
+        # Each broker runs its own Paho thread; the shared deduplicator is not thread-safe.
+        self._pipeline_lock = Lock()
         self.monitors = {
-            name: ActivityCounter(network_config(config, name))
+            name: ActivityCounter(network_config(config, name),
+                                  sink=lambda payload, n=name: self.receive(n, payload))
             for name in NETWORKS
         }
+
+    def receive(self, network, payload):
+        """Process one broker payload on its Paho thread and queue the result for the UI."""
+        with self._pipeline_lock:
+            result = self.pipeline.process(network, payload)
+        self.events.push(network, result)
+        return result
+
+    def drain_events(self, limit=50):
+        """Called from the Tk thread; never blocks on broker I/O."""
+        return self.events.drain(limit)
 
     def start(self, factories=None):
         """Start only explicitly enabled networks with configured narrow topics."""

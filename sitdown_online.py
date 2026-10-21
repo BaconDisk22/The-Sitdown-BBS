@@ -61,8 +61,9 @@ class WeatherDesk:
 
 class ActivityCounter:
     """Subscribe-only counter; never forwards MQTT payloads to a radio."""
-    def __init__(self, config):
+    def __init__(self, config, sink=None):
         self.config = config
+        self.sink = sink  # optional receive-only payload handler
         self.client = None
         self.status = 'Disabled'
         self.counts = Counter()
@@ -134,6 +135,11 @@ class ActivityCounter:
                 self.counts[message.topic] += 1
             else:
                 self.overflow += 1
+        if self.sink is not None:
+            try:
+                self.sink(getattr(message, 'payload', b''))
+            except Exception:
+                logging.warning('MQTT payload processing failed; counter unaffected.')
 
     def diagnostics(self):
         """Credential-free summary of the optional MQTT counter configuration."""
