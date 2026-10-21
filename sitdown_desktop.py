@@ -474,7 +474,6 @@ class SitdownApp:
     def integration_settings(self, page):
         config = self.read_config()
         tabs = ttk.Notebook(page)
-        tabs.pack(fill='both', expand=True)
         fields = {}
         self.setting_fields = fields
         sections = {
@@ -575,6 +574,8 @@ class SitdownApp:
         self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
                            lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
                            THEME['primary'], compact=True).pack(side='bottom', pady=4)
+        # Pack the expandable notebook last so footer controls stay visible on Intel Mac.
+        tabs.pack(side='top', fill='both', expand=True)
 
     def check_centralnj_send_safety(self):
         """Offline preflight only; never sends a packet or publishes MQTT."""
