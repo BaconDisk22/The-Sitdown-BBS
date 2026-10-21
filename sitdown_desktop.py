@@ -491,6 +491,17 @@ class SitdownApp:
             self.dual_mqtt.connect(name)
             self.log(f'{name}: MQTT receive-only auto-connect requested.')
 
+    def mqtt_network_status(self):
+        """Display distinct broker status/RX counts without exposing credentials."""
+        from sitdown_dual_mqtt import NETWORKS
+        if self.dual_mqtt is None:
+            lines = [f'{name}: Not connected (receive-only)' for name in NETWORKS]
+        else:
+            snapshots = self.dual_mqtt.snapshot()
+            lines = [f"{name}: {snapshots[name]['status']} — MQTT RX {snapshots[name]['total']}"
+                     for name in NETWORKS]
+        self.show_info('Mesh Network Status', '\\n'.join(lines))
+
     def mqtt_network_action(self, network, connect):
         """Operator-initiated receive-only broker monitoring, never a radio send."""
         from sitdown_dual_mqtt import DualMQTTMonitors
@@ -618,6 +629,8 @@ class SitdownApp:
                            THEME['panel'], compact=True).pack(side='bottom', pady=2)
         self.styled_button(page, 'DISCONNECT SJMESH', lambda: self.mqtt_network_action('sjmesh', False),
                            THEME['panel'], compact=True).pack(side='bottom', pady=2)
+        self.styled_button(page, 'SHOW NETWORK STATUS', self.mqtt_network_status,
+                           THEME['primary'], compact=True).pack(side='bottom', pady=2)
         # Pack the expandable notebook last so footer controls stay visible on Intel Mac.
         tabs.pack(side='top', fill='both', expand=True)
 
