@@ -17,6 +17,23 @@ NETWORKS = {
 }
 
 
+def topic_allowed(topic):
+    """Accept one exact topic, or every gateway on one named encrypted channel.
+
+    The only wildcard allowed is a single trailing '+' in the gateway position
+    of a Meshtastic channel topic, e.g. msh/US/2/e/CentralNJ/+. '#', any other
+    '+', and broad region topics stay refused.
+    """
+    if not topic or any(ch.isspace() for ch in topic) or '#' in topic:
+        return False
+    if '+' not in topic:
+        return True
+    parts = topic.split('/')
+    return (parts[-1] == '+' and '+' not in ''.join(parts[:-1])
+            and len(parts) >= 6 and parts[0] == 'msh'
+            and parts[-4:-2] == ['2', 'e'] and all(parts[:-1]))
+
+
 def network_config(source, network):
     """Return an isolated ActivityCounter config; never fill in credentials."""
     section, default_host = NETWORKS[network]
@@ -92,7 +109,7 @@ class DualMQTTMonitors:
             monitor.status = 'Disabled — enable profile first'
             return False
         topic = monitor.config.get('mqtt_monitor', 'topic', fallback='').strip()
-        if not topic or '#' in topic or '+' in topic:
+        if not topic_allowed(topic):
             monitor.status = 'Disabled — explicit narrow topic required'
             return False
         host = monitor.config.get('mqtt_monitor', 'host', fallback='').strip()
