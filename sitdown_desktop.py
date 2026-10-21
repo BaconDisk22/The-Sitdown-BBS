@@ -262,6 +262,7 @@ class SitdownApp:
         log_header.pack(fill="x", padx=20, pady=(10, 0))
         label(log_header, '▤  Server Log', 12, c['text']).pack(side='left')
         self.log_query = tk.StringVar()
+        self.styled_button(log_header, 'Expand Log', self.expand_log, '#233139', compact=True).pack(side='left', padx=(12, 3))
         for title, action in (('Clear Log', self.clear_log), ('Save Log', self.export_log), ('Find', self.find_log)):
             self.styled_button(log_header, title, action, '#233139', compact=True).pack(side='right', padx=3)
         ttk.Entry(log_header, textvariable=self.log_query, width=20, style='Desk.TEntry').pack(side='right', padx=5)
@@ -742,6 +743,43 @@ class SitdownApp:
             self.output.delete("1.0", "300.0")
         self.output.see("end")
         self.output.configure(state="disabled")
+        self._sync_expanded_log()
+
+    def expand_log(self):
+        """Open a large, resizable live view without disturbing the server."""
+        window = getattr(self, '_expanded_log_window', None)
+        if window is not None and window.winfo_exists():
+            window.lift()
+            window.focus_force()
+            return
+        window = tk.Toplevel(self.root)
+        self._expanded_log_window = window
+        window.title("THE SITDOWN BBS — Live Server Log")
+        window.geometry("1000x650")
+        window.minsize(550, 300)
+        frame = tk.Frame(window, bg="#111e22", padx=12, pady=12)
+        frame.pack(fill="both", expand=True)
+        scrollbar = tk.Scrollbar(frame)
+        scrollbar.pack(side="right", fill="y")
+        viewer = tk.Text(frame, bg="#01090b", fg="#42ed50", font=("Menlo", 14),
+                         wrap="word", padx=16, pady=12, state="disabled",
+                         yscrollcommand=scrollbar.set)
+        viewer.pack(side="left", fill="both", expand=True)
+        scrollbar.configure(command=viewer.yview)
+        self._expanded_log_view = viewer
+        self._sync_expanded_log()
+
+    def _sync_expanded_log(self):
+        """Mirror bounded log text; never change the source or radio session."""
+        window = getattr(self, '_expanded_log_window', None)
+        if window is None or not window.winfo_exists():
+            return
+        viewer = self._expanded_log_view
+        viewer.configure(state="normal")
+        viewer.delete("1.0", "end")
+        viewer.insert("1.0", self.output.get("1.0", "end-1c"))
+        viewer.see("end")
+        viewer.configure(state="disabled")
 
     def find_log(self):
         """Find the next match without altering or filtering server output."""
@@ -770,6 +808,7 @@ class SitdownApp:
         self.output.configure(state="normal")
         self.output.delete("1.0", "end")
         self.output.configure(state="disabled")
+        self._sync_expanded_log()
         self.log("The Backroom: visible log cleared.")
 
     def export_log(self):
