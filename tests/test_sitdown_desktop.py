@@ -248,6 +248,22 @@ class DesktopWindowTests(unittest.TestCase):
             self.app.control_request('announce', channel=0, text='Demo')
             self.app.supervisor.request.assert_not_called()
 
+    def test_wire_shows_each_network_separately_and_updates_live(self):
+        from sitdown_mqtt_envelope import EnvelopeSummary
+        from sitdown_mqtt_pipeline import ProcessingResult
+        summary = EnvelopeSummary('!12345678', 'LongFast', 7, 0x7b, 0xFFFFFFFF, True, None)
+        self.app.dual_mqtt = Mock(drain_events=Mock(return_value=[
+            ('centralnj', ProcessingResult(True, 'Encrypted metadata only', 'centralnj', summary))]))
+        self.app.select_page('BBS')
+        self.root.update()
+        self.app.poll()
+        central = self.app.wire_views['centralnj'].get('1.0', 'end')
+        south = self.app.wire_views['sjmesh'].get('1.0', 'end')
+        self.assertIn('from !0000007b', central)
+        self.assertIn('ENCRYPTED', central)
+        self.assertNotIn('!0000007b', south)
+        self.app.dual_mqtt = None
+
     def test_settings_save_preserves_existing_config_and_validates(self):
         path = Path(self.directory.name) / 'config.ini'
         path.write_text('[interface]\ntype = tcp\nhostname = 192.0.2.10\n[menu]\nmain_menu_items = B,X\n')

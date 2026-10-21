@@ -23,6 +23,7 @@ from sitdown_backup import create_backup_archive
 from sitdown_restore_preflight import inspect_backup_archive
 from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
+from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS
 from sitdown_personality import Personality
 import zipfile
 
@@ -50,6 +51,8 @@ class SitdownApp:
         self.preflight_pending = False
         self.proc = None
         self.dual_mqtt = None
+        self.mesh_feed = MeshFeed()
+        self.wire_views = {}
         self.supervisor = None
         self.restart_at = None
         self.retry_count = 0
@@ -430,9 +433,18 @@ class SitdownApp:
                        + config.get('weather', 'local_report', fallback='No local report configured.')
                        + '\n\nConfigure a local report or explicitly enable internet weather in Settings.\n'
                        'Internet results use Open-Meteo, cache for ten minutes, and label stale data.')
-        self.styled_button(wire, 'REFRESH COUNTS', lambda: self.select_page('BBS')).pack(anchor='w')
+        wire_tabs = ttk.Notebook(wire)
+        wire_tabs.pack(fill='both', expand=True)
+        counts = tk.Frame(wire_tabs, bg=THEME['panel'], padx=10, pady=10)
+        wire_tabs.add(counts, text='Server counts')
+        self.wire_views = {}
+        for network, label in NETWORK_LABELS.items():
+            frame = tk.Frame(wire_tabs, bg=THEME['panel'], padx=10, pady=10)
+            wire_tabs.add(frame, text=label)
+            self.wire_views[network] = self.page_text(frame, self.mesh_feed.render(network))
+        self.styled_button(counts, 'REFRESH COUNTS', lambda: self.select_page('BBS')).pack(anchor='w')
         data = self.snapshot['mqtt']
-        self.page_text(wire, f"MQTT: {data['status']}\nMessages this server session: {data['total']}\n\n"
+        self.page_text(counts, f"MQTT: {data['status']}\nMessages this server session: {data['total']}\n\n"
                        + '\n'.join(f'{count}  {topic}' for topic, count in data['topics'])
                        + '\n\nMQTT is opt-in and never forwards messages to the radio.\n'
                        'Counts exclude retained messages; they are not proof of radio RX.')
@@ -472,6 +484,25 @@ class SitdownApp:
             except sqlite3.Error as exc:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
+
+    def drain_mqtt_events(self):
+        """Move queued broker results into the per-network feed on the Tk thread."""
+        if self.dual_mqtt is None:
+            return
+        changed = set()
+        for network, result in self.dual_mqtt.drain_events(limit=50):
+            if self.mesh_feed.add(network, result):
+                changed.add(network)
+        for network in changed:
+            box = self.wire_views.get(network)
+            if box is None or not box.winfo_exists():
+                continue
+            top = box.yview()[0]
+            box.configure(state='normal')
+            box.delete('1.0', 'end')
+            box.insert('1.0', self.mesh_feed.render(network))
+            box.configure(state='disabled')
+            box.yview_moveto(top)
 
     def start_opted_in_mqtt(self):
         """Only explicitly enabled and auto-connect profiles may open broker sessions."""
@@ -1023,6 +1054,7 @@ class SitdownApp:
                 self.schedule_recovery()
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
+        self.drain_mqtt_events()
         # Only SDK link events count as connected; MQTT monitor is read-only.
         radio_state = 'unverified'
         if monitor and monitor.running:
