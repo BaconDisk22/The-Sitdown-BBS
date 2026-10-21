@@ -113,7 +113,7 @@ class ActivityCounter:
         if reason_code == 0:
             self.recovery.connected()
             result, _ = client.subscribe(self.topic)
-            self.status = 'Connected (subscription requested)' if result == 0 else 'Subscription failed'
+            self.status = 'Subscription requested (not yet confirmed)' if result == 0 else 'Subscription failed'
         else:
             self.status = 'Connection refused'
 
