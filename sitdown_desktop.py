@@ -91,6 +91,7 @@ class SitdownApp:
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(250, self.poll)
+        self.root.after(600, self.start_opted_in_mqtt)
         if self.auto_start.get():
             self.root.after(200, self.start)
 
@@ -471,6 +472,24 @@ class SitdownApp:
             except sqlite3.Error as exc:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
+
+    def start_opted_in_mqtt(self):
+        """Auto-connect only saved, enabled and explicitly opted-in profiles."""
+        if self.demo.get():
+            return
+        config = self.read_config()
+        networks = [('centralnj', 'mqtt_centralnj'), ('sjmesh', 'mqtt_sjmesh')]
+        selected = [name for name, section in networks
+                    if config.getboolean(section, 'enabled', fallback=False)
+                    and config.getboolean(section, 'auto_connect', fallback=False)]
+        if not selected:
+            return
+        from sitdown_dual_mqtt import DualMQTTMonitors
+        if self.dual_mqtt is None:
+            self.dual_mqtt = DualMQTTMonitors(config)
+        for name in selected:
+            self.dual_mqtt.connect(name)
+            self.log(f'{name}: MQTT receive-only auto-connect requested.')
 
     def mqtt_network_action(self, network, connect):
         """Operator-initiated receive-only broker monitoring, never a radio send."""
