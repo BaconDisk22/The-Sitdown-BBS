@@ -59,6 +59,17 @@ class DualMQTTMonitors:
         if not topic or '#' in topic or '+' in topic:
             monitor.status = 'Disabled — explicit narrow topic required'
             return False
+        host = monitor.config.get('mqtt_monitor', 'host', fallback='').strip()
+        if not host or any(ch.isspace() for ch in host):
+            monitor.status = 'Disabled — valid broker hostname required'
+            return False
+        try:
+            port = monitor.config.getint('mqtt_monitor', 'port', fallback=8883)
+            if not 1 <= port <= 65535:
+                raise ValueError('port out of range')
+        except ValueError:
+            monitor.status = 'Disabled — invalid broker port'
+            return False
         monitor.start(factory=factory)
         return monitor.client is not None
 
