@@ -490,6 +490,16 @@ class SitdownApp:
             self.dual_mqtt.connect(name)
             self.log(f'{name}: receive-only MQTT auto-connect requested.')
 
+    def mqtt_network_status(self):
+        """Read-only status for independent MQTT sessions (not radio delivery)."""
+        if self.dual_mqtt is None:
+            lines = [f'{name}: Not connected; MQTT RX 0' for name in ('centralnj', 'sjmesh')]
+        else:
+            data = self.dual_mqtt.snapshot()
+            lines = [f"{name}: {data[name]['status']}; MQTT RX {data[name]['total']}"
+                     for name in ('centralnj', 'sjmesh')]
+        self.show_info('Mesh Network Status', '\\n'.join(lines))
+
     def mqtt_network_action(self, network, connect):
         """Manual receive-only connection for one saved network profile."""
         from sitdown_dual_mqtt import DualMQTTMonitors
@@ -618,6 +628,8 @@ class SitdownApp:
             self.styled_button(page, f'DISCONNECT {name.upper()}',
                                lambda n=name: self.mqtt_network_action(n, False),
                                THEME['panel'], compact=True).pack(side='bottom', pady=2)
+        self.styled_button(page, 'SHOW MQTT NETWORK STATUS', self.mqtt_network_status,
+                           THEME['primary'], compact=True).pack(side='bottom', pady=2)
         # Pack the expandable notebook last so footer controls stay visible on Intel Mac.
         tabs.pack(side='top', fill='both', expand=True)
 
