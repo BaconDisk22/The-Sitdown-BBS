@@ -32,6 +32,7 @@ DATA = Path.home() / ".sitdown-bbs"
 CONFIG = DATA / "launcher.json"
 THEME = {"background": "#030a0c", "panel": "#061013", "primary": "#ed001b",
          "connected": "#19e333", "text": "#F5F5F0", "highlight": "#d3dde0"}
+LOG_MIN_LINES = 8
 COMMANDS = [
     ("/sitdown", "Main menu"), ("/help", "Quick help"),
     ("/mail", "Check your mail"), ("/boards", "The Social Club"),
@@ -76,7 +77,9 @@ class SitdownApp:
         self.status = tk.StringVar(value="Stopped")
         self.colors = THEME
         self.root.title("THE SITDOWN BBS | North Jersey Communications Division")
-        self.root.geometry("1160x940")
+        # Open taller when the screen allows it, so the server log is readable.
+        height = max(940, min(1100, self.root.winfo_screenheight() - 80))
+        self.root.geometry(f"1160x{height}")
         self.root.minsize(960, 760)
         self.root.configure(bg=THEME["background"])
         style = ttk.Style(self.root)
@@ -177,8 +180,10 @@ class SitdownApp:
         self.page_host.grid_columnconfigure(0, weight=1)
         self.home_page = tk.Frame(self.page_host, bg=c['background'])
         self.home_page.grid(row=0, column=0, sticky='nsew')
-        cards = tk.Frame(self.home_page, bg=c["background"])
-        cards.pack(fill="x", padx=8, pady=(0, 4))
+        # Cards and log share a draggable split; the log takes all extra height.
+        self.home_split = tk.PanedWindow(self.home_page, orient='vertical', bg=c['background'],
+                                         sashwidth=8, sashrelief='flat', bd=0, showhandle=False)
+        cards = tk.Frame(self.home_split, bg=c["background"])
         for column in range(3):
             cards.grid_columnconfigure(column, weight=1, uniform="jersey")
 
@@ -199,10 +204,12 @@ class SitdownApp:
                            bg=c['panel'], fg=c['text'], selectcolor='#17262b').pack(side='left')
         tk.Label(radio, text="Device path or radio IP", bg=c["panel"], fg=c["text"]).pack(anchor="w", pady=(10, 2))
         ttk.Entry(radio, textvariable=self.address, style='Desk.TEntry').pack(fill='x')
-        self.styled_button(radio, "Find USB Ports", self.list_ports, "#233139").pack(
-            fill="x", pady=(8, 0))
-        self.styled_button(radio, "Check Radio Connection", self.check_radio_connection,
-                           "#233139").pack(fill="x", pady=(8, 0))
+        radio_actions = tk.Frame(radio, bg=c['panel'])
+        radio_actions.pack(fill='x', pady=(8, 0))
+        self.styled_button(radio_actions, "Find USB Ports", self.list_ports, "#233139",
+                           compact=True).pack(side='left', expand=True, fill='x', padx=(0, 3))
+        self.styled_button(radio_actions, "Check Radio Connection", self.check_radio_connection,
+                           "#233139", compact=True).pack(side='left', expand=True, fill='x', padx=(3, 0))
         tk.Label(radio, text="TCP checks briefly use a client slot. Close other radio clients first.",
                  bg=c['panel'], fg=c['highlight'], wraplength=275,
                  justify='left').pack(anchor='w', pady=(4, 0))
@@ -216,9 +223,6 @@ class SitdownApp:
                  bg=c["panel"], fg=c["highlight"], wraplength=275,
                  justify="left").pack(anchor="w", pady=(10, 0))
 
-        tk.Label(radio, textvariable=self.node_count, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
-        tk.Label(radio, textvariable=self.uptime, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
-        tk.Label(radio, textvariable=self.traffic, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=3)
         tk.Label(radio, textvariable=self.link_warning, bg=c['panel'], fg=c['highlight'], wraplength=280).pack(anchor='w', pady=3)
         tk.Label(radio, textvariable=self.centralnj_status, bg=c['panel'], fg=c['highlight'],
                  justify='left', wraplength=280).pack(anchor='w', pady=3)
@@ -242,6 +246,8 @@ class SitdownApp:
         self.styled_button(server, '■  Stop Server', self.stop, c['primary']).pack(fill='x', pady=3)
         tk.Label(server, text='Process status is separate from radio RX.', bg=c['panel'], fg='#a6b4b8',
                  wraplength=280, justify='left').pack(anchor='w', pady=8)
+        for variable in (self.node_count, self.uptime, self.traffic):
+            tk.Label(server, textvariable=variable, bg=c['panel'], fg=c['text']).pack(anchor='w', pady=2)
 
         personality = card(2, "Jersey Personality • Attitude Adjustah")
         tk.Label(personality, text='Desktop greeting style', bg=c['panel'], fg='#a6b4b8').pack(anchor='w', pady=5)
@@ -262,9 +268,10 @@ class SitdownApp:
                  highlightbackground='#1e3035', highlightthickness=1).pack(fill='x')
         self.styled_button(personality, 'Save Settings', self.save, '#233139').pack(fill='x', pady=(10, 3))
         self.styled_button(personality, 'Public Broadcast Settings', self.settings, '#233139').pack(fill='x', pady=3)
-        log_header = tk.Frame(self.home_page, bg=c["panel"], padx=12, pady=9,
+        log_section = tk.Frame(self.home_split, bg=c['background'])
+        log_header = tk.Frame(log_section, bg=c["panel"], padx=12, pady=9,
                               highlightbackground="#24404A", highlightthickness=1)
-        log_header.pack(fill="x", padx=20, pady=(10, 0))
+        log_header.pack(fill="x", padx=20, pady=(6, 0))
         label(log_header, '▤  Server Log', 12, c['text']).pack(side='left')
         self.log_query = tk.StringVar()
         self.styled_button(log_header, 'Expand Log', self.expand_log, '#233139', compact=True).pack(side='left', padx=(12, 3))
@@ -286,11 +293,17 @@ class SitdownApp:
                  font=("Helvetica", 12)).pack(side="right", padx=(14, 0))
         tk.Label(footer, text="SERVER PROCESS:", bg=c["panel"], fg=c["highlight"],
                  font=("Helvetica", 12, "bold")).pack(side="right")
-        self.output = tk.Text(self.home_page, bg="#01090b", fg="#42ed50", insertbackground=c["text"],
+        self.output = tk.Text(log_section, bg="#01090b", fg="#42ed50", insertbackground=c["text"],
                               wrap="word", relief="flat", state="disabled", height=12,
                               font=("Menlo", 14), padx=16, pady=12,
                               highlightbackground="#24404A", highlightthickness=1)
         self.output.pack(fill="both", expand=True, padx=20, pady=(5, 5))
+        self.home_split.pack(fill='both', expand=True)
+        cards.update_idletasks()
+        linespace = self.output.tk.call('font', 'metrics', self.output.cget('font'), '-linespace')
+        self.home_split.add(cards, minsize=120, stretch='never')
+        self.home_split.add(log_section, stretch='always',
+                            minsize=log_header.winfo_reqheight() + LOG_MIN_LINES * int(linespace) + 20)
         self.output.tag_configure("event_error", foreground="#FF8B85")
         self.output.tag_configure("event_ready", foreground="#27ff3d")
         self.log(Personality(self.desktop_mouth.get(), self.public_mouth.get(), self.public_profanity.get()).message("welcome"))
@@ -571,16 +584,23 @@ class SitdownApp:
             'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
         }
         for section, entries in sections.items():
-            frame = tk.Frame(tabs, bg=THEME['panel'], padx=20, pady=15)
-            tabs.add(frame, text={'mqtt_monitor': 'MQTT', 'mqtt_centralnj': 'CentralNJ', 'mqtt_sjmesh': 'SJMesh', 'startup': 'Startup', 'announcements': 'Admins', 'weather': 'Weather', 'personality': 'Personality'}[section])
-            for key, label, default in entries:
+            holder = tk.Frame(tabs, bg=THEME['panel'])
+            frame = self.scrollable(holder)
+            frame.configure(padx=20, pady=12)
+            frame.grid_columnconfigure(1, weight=1)
+            tabs.add(holder, text={'mqtt_monitor': 'MQTT', 'mqtt_centralnj': 'CentralNJ', 'mqtt_sjmesh': 'SJMesh', 'startup': 'Startup', 'announcements': 'Admins', 'weather': 'Weather', 'personality': 'Personality'}[section])
+            # One row per setting (label beside its field) so every tab fits on screen.
+            for row, (key, label, default) in enumerate(entries):
                 if default.startswith('bool'):
                     var = tk.BooleanVar(value=config.getboolean(section, key, fallback=default == 'bool_true'))
-                    tk.Checkbutton(frame, text=label, variable=var, bg=THEME['panel'], fg=THEME['text'], selectcolor=THEME['background']).pack(anchor='w', pady=8)
+                    tk.Checkbutton(frame, text=label, variable=var, bg=THEME['panel'], fg=THEME['text'],
+                                   selectcolor=THEME['background']).grid(row=row, column=0, columnspan=2, sticky='w', pady=3)
                 else:
                     var = tk.StringVar(value=config.get(section, key, fallback=default))
-                    tk.Label(frame, text=label, bg=THEME['panel'], fg=THEME['text']).pack(anchor='w', pady=(8, 2))
-                    ttk.Entry(frame, textvariable=var, show='*' if key == 'password' else '', style='Desk.TEntry').pack(fill='x', pady=(3, 8))
+                    tk.Label(frame, text=label, bg=THEME['panel'], fg=THEME['text'], wraplength=300,
+                             justify='left').grid(row=row, column=0, sticky='w', padx=(0, 14), pady=3)
+                    ttk.Entry(frame, textvariable=var, show='*' if key == 'password' else '',
+                              style='Desk.TEntry').grid(row=row, column=1, sticky='ew', pady=3)
                 fields[(section, key)] = var
         def save():
             for (section, key), var in fields.items():
@@ -639,8 +659,6 @@ class SitdownApp:
                     "Two-way delivery requires radio and channel configuration; "
                     "this screen does not activate radio MQTT automatically."
                 )
-        self.styled_button(page, 'SAVE — APPLY ON NEXT SERVER START',
-                           save, THEME['connected'], compact=True).pack(side='bottom', pady=6)
         def check_mqtt_configuration():
             """Validate current unsaved form values offline, without opening a connection."""
             preview = configparser.ConfigParser()
@@ -653,25 +671,53 @@ class SitdownApp:
             self.show_info('MQTT Configuration Check', report)
 
         self.toggle_row(page, 'Allow operator send preflight (off by default)', self.centralnj_send_enabled)
-        self.styled_button(page, 'CHECK SEND SAFETY',
-                           self.check_centralnj_send_safety, THEME['panel'], compact=True).pack(side='bottom', pady=4)
-        self.styled_button(page, 'CHECK MQTT CONFIGURATION',
-                           check_mqtt_configuration,
-                           THEME['panel'], compact=True).pack(side='bottom', pady=4)
-        self.styled_button(page, 'CENTRALNJ SETUP GUIDE',
-                           lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide),
-                           THEME['primary'], compact=True).pack(side='bottom', pady=4)
-        for name in ('centralnj', 'sjmesh'):
-            self.styled_button(page, f'CONNECT {name.upper()}',
-                               lambda n=name: self.mqtt_network_action(n, True),
-                               THEME['panel'], compact=True).pack(side='bottom', pady=2)
-            self.styled_button(page, f'DISCONNECT {name.upper()}',
-                               lambda n=name: self.mqtt_network_action(n, False),
-                               THEME['panel'], compact=True).pack(side='bottom', pady=2)
-        self.styled_button(page, 'SHOW MQTT NETWORK STATUS', self.mqtt_network_status,
-                           THEME['primary'], compact=True).pack(side='bottom', pady=2)
+        # Compact action bar: three rows instead of a tall stack that squeezed the form.
+        actions = tk.Frame(page, bg=THEME['background'])
+        actions.pack(side='bottom', fill='x', pady=(6, 0))
+        rows = (
+            [('SHOW MQTT NETWORK STATUS', self.mqtt_network_status, THEME['primary'])]
+            + [(f'{verb} {name.upper()}', lambda n=name, c=(verb == 'CONNECT'): self.mqtt_network_action(n, c), THEME['panel'])
+               for name in ('centralnj', 'sjmesh') for verb in ('CONNECT', 'DISCONNECT')],
+            [('CENTRALNJ SETUP GUIDE', lambda: self.show_info('CentralNJ MQTT / Radio Setup', guide), THEME['primary']),
+             ('CHECK MQTT CONFIGURATION', check_mqtt_configuration, THEME['panel']),
+             ('CHECK SEND SAFETY', self.check_centralnj_send_safety, THEME['panel'])],
+            [('SAVE — APPLY ON NEXT SERVER START', save, THEME['connected'])],
+        )
+        for buttons in rows:
+            line = tk.Frame(actions, bg=THEME['background'])
+            line.pack(fill='x', pady=2)
+            for text, command, color in buttons:
+                self.styled_button(line, text, command, color, compact=True).pack(
+                    side='left', expand=True, fill='x', padx=2)
         # Pack the expandable notebook last so footer controls stay visible on Intel Mac.
         tabs.pack(side='top', fill='both', expand=True)
+
+    def scrollable(self, parent):
+        """Return a frame inside parent that scrolls vertically only when it does not fit."""
+        canvas = tk.Canvas(parent, bg=THEME['panel'], highlightthickness=0, bd=0)
+        bar = ttk.Scrollbar(parent, orient='vertical', command=canvas.yview)
+        inner = tk.Frame(canvas, bg=THEME['panel'])
+        window = canvas.create_window(0, 0, window=inner, anchor='nw')
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.pack(side='left', fill='both', expand=True)
+
+        def refresh(_event=None):
+            canvas.itemconfigure(window, width=canvas.winfo_width())
+            canvas.configure(scrollregion=(0, 0, inner.winfo_reqwidth(), inner.winfo_reqheight()))
+            if inner.winfo_reqheight() > canvas.winfo_height() > 1:
+                bar.pack(side='right', fill='y', before=canvas)
+            else:
+                bar.pack_forget()
+                canvas.yview_moveto(0)
+        inner.bind('<Configure>', refresh)
+        canvas.bind('<Configure>', refresh)
+
+        def wheel(event):
+            if bar.winfo_ismapped():
+                canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+        canvas.bind('<Enter>', lambda _e: canvas.bind_all('<MouseWheel>', wheel))
+        canvas.bind('<Leave>', lambda _e: canvas.unbind_all('<MouseWheel>'))
+        return inner
 
     def check_centralnj_send_safety(self):
         """Offline preflight only; never sends a packet or publishes MQTT."""

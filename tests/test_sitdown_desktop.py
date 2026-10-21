@@ -272,6 +272,43 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertNotIn('!0000007b', south)
         self.app.dual_mqtt = None
 
+    def test_server_log_stays_readable_at_every_window_size(self):
+        linespace = int(self.app.output.tk.call('font', 'metrics', self.app.output.cget('font'), '-linespace'))
+        for geometry in ('1160x760', '1160x940', '1160x1040', '1600x1000'):
+            with self.subTest(geometry=geometry):
+                self.root.geometry(geometry)
+                self.root.update()
+                self.assertGreaterEqual(self.app.output.winfo_height() // linespace, desktop.LOG_MIN_LINES)
+
+    def test_every_settings_field_is_visible_or_scrollable(self):
+        from tkinter import ttk
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        for geometry in ('1160x760', '1160x940'):
+            self.root.geometry(geometry)
+            self.app.select_page('SETTINGS')
+            self.root.update()
+            notebook = next(w for w in descendants(self.app.active_page) if isinstance(w, ttk.Notebook))
+            for index, tab in enumerate(notebook.tabs()):
+                notebook.select(index)
+                self.root.update()
+                self.root.update()
+                holder = self.root.nametowidget(tab)
+                canvas = next(w for w in holder.winfo_children() if isinstance(w, tk.Canvas))
+                bar = next(w for w in holder.winfo_children() if isinstance(w, ttk.Scrollbar))
+                fits = canvas.winfo_children()[0].winfo_reqheight() <= canvas.winfo_height()
+                with self.subTest(geometry=geometry, tab=notebook.tab(index, 'text')):
+                    self.assertTrue(fits or bar.winfo_ismapped())
+                    if geometry == '1160x940':
+                        self.assertTrue(fits)
+            save = next(w for w in descendants(self.app.active_page)
+                        if isinstance(w, tk.Label) and w.cget('text').startswith('SAVE'))
+            self.assertTrue(save.winfo_ismapped())
+            self.assertLessEqual(save.winfo_rooty() + save.winfo_height(),
+                                 self.root.winfo_rooty() + self.root.winfo_height())
+
     def test_settings_save_preserves_existing_config_and_validates(self):
         path = Path(self.directory.name) / 'config.ini'
         path.write_text('[interface]\ntype = tcp\nhostname = 192.0.2.10\n[menu]\nmain_menu_items = B,X\n')
@@ -281,7 +318,11 @@ class DesktopWindowTests(unittest.TestCase):
             fields = self.app.setting_fields
             fields[('startup', 'enabled')].set(True)
             fields[('startup', 'message')].set('Hello Jersey')
-            button = next(w for w in self.app.active_page.winfo_children()
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from descendants(child)
+            button = next(w for w in descendants(self.app.active_page)
                           if isinstance(w, tk.Label) and w.cget('text').startswith('SAVE'))
             button.event_generate('<Button-1>')
             config = self.app.read_config()
