@@ -482,11 +482,13 @@ class SitdownApp:
             'announcements': [('admin_nodes', 'Remote administrator node IDs (comma separated)', '')],
             'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.20'), ('longitude', 'Longitude', '-74.50')],
             'mqtt_monitor': [('enabled', 'Enable MQTT counter', 'bool'), ('host', 'Broker hostname', ''), ('topic', 'Subscription topic', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_centralnj': [('enabled', 'Enable CentralNJ monitor', 'bool'), ('auto_connect', 'Auto-connect CentralNJ at startup (future integration)', 'bool'), ('host', 'Broker hostname', 'mqtt.meshtastic.org'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_sjmesh': [('enabled', 'Enable SJMesh monitor', 'bool'), ('auto_connect', 'Auto-connect SJMesh at startup (future integration)', 'bool'), ('host', 'Broker hostname', 'mqtt.sjmesh.net'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
             'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
         }
         for section, entries in sections.items():
             frame = tk.Frame(tabs, bg=THEME['panel'], padx=20, pady=15)
-            tabs.add(frame, text={'mqtt_monitor': 'MQTT', 'startup': 'Startup', 'announcements': 'Admins', 'weather': 'Weather', 'personality': 'Personality'}[section])
+            tabs.add(frame, text={'mqtt_monitor': 'MQTT', 'mqtt_centralnj': 'CentralNJ', 'mqtt_sjmesh': 'SJMesh', 'startup': 'Startup', 'announcements': 'Admins', 'weather': 'Weather', 'personality': 'Personality'}[section])
             for key, label, default in entries:
                 if default.startswith('bool'):
                     var = tk.BooleanVar(value=config.getboolean(section, key, fallback=default == 'bool_true'))
@@ -516,6 +518,15 @@ class SitdownApp:
                         raise ValueError('MQTT requires an explicit broker and topic.')
                     if not 1 <= config.getint('mqtt_monitor', 'port') <= 65535:
                         raise ValueError('Invalid MQTT port.')
+                for section in ('mqtt_centralnj', 'mqtt_sjmesh'):
+                    if config.getboolean(section, 'enabled', fallback=False):
+                        if not config.get(section, 'host', fallback='').strip():
+                            raise ValueError(f'{section}: broker hostname is required.')
+                        topic = config.get(section, 'topic', fallback='').strip()
+                        if not topic or '#' in topic or '+' in topic:
+                            raise ValueError(f'{section}: an exact, narrow topic without wildcards is required.')
+                        if not 1 <= config.getint(section, 'port') <= 65535:
+                            raise ValueError(f'{section}: port must be 1–65535.')
                 path = self.config_path()
                 path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = path.with_suffix('.ini.tmp')
