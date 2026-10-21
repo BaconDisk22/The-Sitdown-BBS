@@ -91,6 +91,7 @@ class SitdownApp:
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(250, self.poll)
+        self.root.after(600, self.start_opted_in_mqtt)
         if self.auto_start.get():
             self.root.after(200, self.start)
 
@@ -472,6 +473,23 @@ class SitdownApp:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
 
+    def start_opted_in_mqtt(self):
+        """Only explicitly enabled and auto-connect profiles may open broker sessions."""
+        if self.demo.get():
+            return
+        config = self.read_config()
+        selected = [name for name in ('centralnj', 'sjmesh')
+                    if config.getboolean('mqtt_' + name, 'enabled', fallback=False)
+                    and config.getboolean('mqtt_' + name, 'auto_connect', fallback=False)]
+        if not selected:
+            return
+        from sitdown_dual_mqtt import DualMQTTMonitors
+        if self.dual_mqtt is None:
+            self.dual_mqtt = DualMQTTMonitors(config)
+        for name in selected:
+            self.dual_mqtt.connect(name)
+            self.log(f'{name}: receive-only MQTT auto-connect requested.')
+
     def mqtt_network_action(self, network, connect):
         """Manual receive-only connection for one saved network profile."""
         from sitdown_dual_mqtt import DualMQTTMonitors
@@ -500,8 +518,8 @@ class SitdownApp:
             'announcements': [('admin_nodes', 'Remote administrator node IDs (comma separated)', '')],
             'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.20'), ('longitude', 'Longitude', '-74.50')],
             'mqtt_monitor': [('enabled', 'Enable MQTT counter', 'bool'), ('host', 'Broker hostname', ''), ('topic', 'Subscription topic', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
-            'mqtt_centralnj': [('enabled', 'Enable CentralNJ monitor', 'bool'), ('auto_connect', 'Auto-connect CentralNJ at startup (future integration)', 'bool'), ('host', 'Broker hostname', 'mqtt.meshtastic.org'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
-            'mqtt_sjmesh': [('enabled', 'Enable SJMesh monitor', 'bool'), ('auto_connect', 'Auto-connect SJMesh at startup (future integration)', 'bool'), ('host', 'Broker hostname', 'mqtt.sjmesh.net'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_centralnj': [('enabled', 'Enable CentralNJ monitor', 'bool'), ('auto_connect', 'Auto-connect CentralNJ at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.meshtastic.org'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_sjmesh': [('enabled', 'Enable SJMesh monitor', 'bool'), ('auto_connect', 'Auto-connect SJMesh at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.sjmesh.net'), ('topic', 'Exact subscription topic (no wildcards)', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
             'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
         }
         for section, entries in sections.items():
