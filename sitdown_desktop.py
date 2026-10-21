@@ -498,7 +498,7 @@ class SitdownApp:
             snapshots = self.dual_mqtt.snapshot()
             lines = [f"{name}: {snapshots[name]['status']}; MQTT RX {snapshots[name]['total']}"
                      for name in ('centralnj', 'sjmesh')]
-        self.show_info('Mesh Network Status', '\\n'.join(lines))
+        self.show_info('Mesh Network Status', '\n'.join(lines))
 
     def mqtt_network_action(self, network, connect):
         """Manual receive-only connection for one saved network profile."""
