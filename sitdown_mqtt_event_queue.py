@@ -27,7 +27,7 @@ class MQTTEventQueue:
             return []
         with self._lock:
             count = min(limit, len(self._events))
-            return [self._events.popleft() for _ in range(count]
+            return [self._events.popleft() for _ in range(count)]
 
     def stats(self):
         with self._lock:
