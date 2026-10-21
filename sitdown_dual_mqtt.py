@@ -47,12 +47,20 @@ class DualMQTTMonitors:
         for name, monitor in self.monitors.items():
             if not monitor.config.getboolean('mqtt_monitor', 'enabled'):
                 continue
-            # Reject unsafe wildcard scopes before any network connection.
-            topic = monitor.config.get('mqtt_monitor', 'topic').strip()
-            if not topic or '#' in topic or '+' in topic:
-                monitor.status = 'Disabled — explicit narrow topic required'
-                continue
-            monitor.start(factory=factories.get(name))
+            self.connect(name, factory=factories.get(name))
+
+    def connect(self, network, factory=None):
+        """Connect one explicitly enabled profile; never connect the other."""
+        monitor = self.monitors[network]
+        if not monitor.config.getboolean('mqtt_monitor', 'enabled', fallback=False):
+            monitor.status = 'Disabled — enable profile first'
+            return False
+        topic = monitor.config.get('mqtt_monitor', 'topic', fallback='').strip()
+        if not topic or '#' in topic or '+' in topic:
+            monitor.status = 'Disabled — explicit narrow topic required'
+            return False
+        monitor.start(factory=factory)
+        return monitor.client is not None
 
     def stop(self, network=None):
         if network is not None:
