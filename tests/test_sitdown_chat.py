@@ -134,7 +134,7 @@ class DesktopRoutingTests(unittest.TestCase):
         self.assertEqual(app.chat_channel_names(), {0: 'LongFast', 1: 'CentralNJ', 3: 'Channel 3'})
         app.snapshot = {'channels': []}
         app.chat_log = ChatLog()
-        self.assertEqual(app.chat_channel_names(), {0: 'Primary channel'})
+        self.assertEqual(app.chat_channel_names(), {0: 'Primary'})
 
 
 if __name__ == '__main__':
