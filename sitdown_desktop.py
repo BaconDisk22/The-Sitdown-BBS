@@ -1220,6 +1220,8 @@ class SitdownApp:
                     elif value.get('type') == 'chat':
                         if self.chat_log.add(value):
                             self.note_chat_message(value)
+                    elif value.get('type') == 'chat_status':
+                        self.chat_log.set_status(value.get('id'), value.get('status'), value.get('reason'))
                     elif value.get('action') == 'chat':
                         if value.get('error'):
                             self.log('Chat not sent: ' + value['error'])

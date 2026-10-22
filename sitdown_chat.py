@@ -14,6 +14,8 @@ from pathlib import Path
 BROADCAST = 0xFFFFFFFF
 MAX_TEXT = 500
 MAX_CHANNELS = 8
+STATUSES = ('sending', 'relayed', 'failed', 'unconfirmed')
+CONFIRM_TIMEOUT = 120
 
 
 def chat_event(packet, interface, clock=time.time):
@@ -56,16 +58,36 @@ class ChatSendLimiter:
         return True
 
 
-def sent_event(channel, text, sender, clock=time.time):
+def sent_event(channel, text, sender, packet_id=0, clock=time.time):
     """The operator's own message, echoed into the chat log once the radio accepted it."""
     return {'type': 'chat', 'channel': channel, 'from': sender, 'short': '', 'long': '',
-            'text': text, 'rx_time': int(clock()), 'mine': True}
+            'text': text, 'rx_time': int(clock()), 'mine': True,
+            'id': packet_id, 'status': 'sending' if packet_id else 'unconfirmed'}
+
+
+def routing_status(packet):
+    """('relayed' | 'failed', reason) from the radio's routing reply to a sent message."""
+    routing = ((packet or {}).get('decoded') or {}).get('routing') or {}
+    reason = str(routing.get('errorReason', 'NONE'))
+    return ('relayed' if reason == 'NONE' else 'failed'), reason
+
+
+def status_label(event, now=None):
+    status = event.get('status')
+    if status == 'sending' and (now if now is not None else time.time()) - event['rx_time'] > CONFIRM_TIMEOUT:
+        status = 'unconfirmed'
+    return {'sending': '… sending', 'relayed': '✓ relayed', 'unconfirmed': '? no confirmation',
+            'failed': f"✗ not relayed ({event.get('reason') or 'no reply'})"}.get(status, '')
 
 
 def format_message(event):
     stamp = time.strftime('%Y-%m-%d %H:%M', time.localtime(event['rx_time']))
     who = ' '.join(part for part in (event['short'], f"({event['long']})" if event['long'] else '') if part)
-    who = 'You' if event['mine'] else (who + ' ' if who else '') + event['from']
+    if event['mine']:
+        label = status_label(event)
+        who = 'You' + (f'  {label}' if label else '')
+    else:
+        who = (who + ' ' if who else '') + event['from']
     return f"{stamp}  {who}\n    {event['text']}"
 
 
@@ -80,9 +102,15 @@ def clean_event(event):
         return None
     if not valid:
         return None
-    return {'type': 'chat', 'channel': channel, 'from': event['from'][:16],
-            'short': str(event.get('short') or '')[:8], 'long': str(event.get('long') or '')[:40],
-            'text': event['text'][:MAX_TEXT], 'rx_time': rx_time, 'mine': bool(event.get('mine'))}
+    clean = {'type': 'chat', 'channel': channel, 'from': event['from'][:16],
+             'short': str(event.get('short') or '')[:8], 'long': str(event.get('long') or '')[:40],
+             'text': event['text'][:MAX_TEXT], 'rx_time': rx_time, 'mine': bool(event.get('mine'))}
+    if clean['mine']:
+        packet_id = event.get('id')
+        clean['id'] = packet_id if isinstance(packet_id, int) and not isinstance(packet_id, bool) else 0
+        clean['status'] = event.get('status') if event.get('status') in STATUSES else 'unconfirmed'
+        clean['reason'] = str(event.get('reason') or '')[:40]
+    return clean
 
 
 class ChatLog:
@@ -113,6 +141,8 @@ class ChatLog:
         for rows in stored.values():
             for row in rows if isinstance(rows, list) else ():
                 event = clean_event(row) if isinstance(row, dict) else None
+                if event is not None and event.get('status') == 'sending':
+                    event['status'] = 'unconfirmed'     # its reply was lost with the old session
                 if event is not None:
                     self._messages.setdefault(event['channel'], deque(maxlen=self.limit)).append(event)
 
@@ -135,6 +165,18 @@ class ChatLog:
         self._messages.setdefault(event['channel'], deque(maxlen=self.limit)).append(event)
         self._save()
         return True
+
+    def set_status(self, packet_id, status, reason=''):
+        """Record the radio's reply for one of our sent messages; False if it is unknown."""
+        if not isinstance(packet_id, int) or not packet_id or status not in STATUSES:
+            return False
+        for rows in self._messages.values():
+            for event in reversed(rows):
+                if event.get('mine') and event.get('id') == packet_id:
+                    event['status'], event['reason'] = status, str(reason or '')[:40]
+                    self._save()
+                    return True
+        return False
 
     def clear(self):
         self._messages = {}
