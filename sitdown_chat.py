@@ -4,8 +4,12 @@ Channel (broadcast) text messages heard by the BBS radio are passed to the
 desktop for display. Direct messages stay with the BBS command handler.
 Sending is operator-initiated only, gated on the desktop and rate limited here.
 """
+import json
+import logging
+import os
 import time
 from collections import deque
+from pathlib import Path
 
 BROADCAST = 0xFFFFFFFF
 MAX_TEXT = 500
@@ -65,24 +69,76 @@ def format_message(event):
     return f"{stamp}  {who}\n    {event['text']}"
 
 
-class ChatLog:
-    """Bounded in-memory history per radio channel for this session."""
+def clean_event(event):
+    """A chat event reduced to known fields with checked types, or None."""
+    try:
+        channel = int(event['channel'])
+        valid = (event.get('type') == 'chat' and 0 <= channel < MAX_CHANNELS
+                 and isinstance(event.get('text'), str) and isinstance(event.get('from'), str))
+        rx_time = int(event.get('rx_time') or 0)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return None
+    if not valid:
+        return None
+    return {'type': 'chat', 'channel': channel, 'from': event['from'][:16],
+            'short': str(event.get('short') or '')[:8], 'long': str(event.get('long') or '')[:40],
+            'text': event['text'][:MAX_TEXT], 'rx_time': rx_time, 'mine': bool(event.get('mine'))}
 
-    def __init__(self, limit=200):
+
+class ChatLog:
+    """Bounded history per radio channel, optionally kept in a local JSON file across restarts."""
+
+    def __init__(self, limit=200, path=None):
         self.limit = limit
+        self.path = Path(path) if path else None
         self._messages = {}
+        if self.path is not None:
+            self._load()
+
+    def _load(self):
+        try:
+            data = json.loads(self.path.read_text(encoding='utf-8'))
+            stored = data['messages']
+            if data.get('version') != 1 or not isinstance(stored, dict):
+                raise ValueError('unsupported chat history format')
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError):
+            logging.warning('Chat history unreadable; kept as %s.bad and starting fresh.', self.path.name)
+            try:
+                os.replace(self.path, self.path.with_name(self.path.name + '.bad'))
+            except OSError:
+                pass
+            return
+        for rows in stored.values():
+            for row in rows if isinstance(rows, list) else ():
+                event = clean_event(row) if isinstance(row, dict) else None
+                if event is not None:
+                    self._messages.setdefault(event['channel'], deque(maxlen=self.limit)).append(event)
+
+    def _save(self):
+        if self.path is None:
+            return
+        payload = {'version': 1, 'messages': {str(ch): list(rows) for ch, rows in self._messages.items()}}
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temp = self.path.with_name(self.path.name + '.tmp')
+            temp.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+            os.replace(temp, self.path)
+        except OSError:
+            logging.warning('Could not save chat history; messages stay in memory for this session.')
 
     def add(self, event):
-        try:
-            channel = int(event['channel'])
-            valid = (event.get('type') == 'chat' and 0 <= channel < MAX_CHANNELS
-                     and isinstance(event.get('text'), str) and isinstance(event.get('from'), str))
-        except (KeyError, TypeError, ValueError):
+        event = clean_event(event)
+        if event is None:
             return False
-        if not valid:
-            return False
-        self._messages.setdefault(channel, deque(maxlen=self.limit)).append(event)
+        self._messages.setdefault(event['channel'], deque(maxlen=self.limit)).append(event)
+        self._save()
         return True
+
+    def clear(self):
+        self._messages = {}
+        self._save()
 
     def channels(self):
         return sorted(self._messages)
@@ -92,7 +148,8 @@ class ChatLog:
 
     def render(self, channel, name):
         rows = self.messages(channel)
-        header = (f'{name} — channel messages this session (last {len(rows)}).\n'
+        kept = 'kept between restarts' if self.path is not None else 'this session'
+        header = (f'{name} — channel messages, {kept} (last {len(rows)}).\n'
                   'Direct messages to the BBS are handled by the BBS.\n\n')
         if not rows:
             return header + 'No messages yet. Start the BBS server to listen on this channel.'

@@ -56,7 +56,8 @@ class SitdownApp:
         self.dual_mqtt = None
         self.mesh_feed = MeshFeed()
         self.wire_views = {}
-        self.chat_log = ChatLog()
+        # Beside launcher.json so tests that redirect CONFIG never touch real history.
+        self.chat_log = ChatLog(path=CONFIG.with_name('chat-history.json'))
         self.chat_views = {}
         self.chat_confirmed = set()
         self.supervisor = None
@@ -519,10 +520,12 @@ class SitdownApp:
         sending = ('Sending is ON for this session.' if self.centralnj_send_enabled.get() else
                    "Sending is OFF — turn on 'Allow operator send preflight' in Settings to send.")
         tk.Label(page, text='Channel chat on your BBS radio. The BBS keeps answering direct-message '
-                 'commands.\n' + sending + ' History lasts for this session.',
+                 'commands.\n' + sending + ' History is kept between restarts.',
                  bg=THEME['background'], fg=THEME['text'], justify='left').pack(anchor='w')
+        self.styled_button(page, 'CLEAR HISTORY', self.clear_chat_history, THEME['panel'],
+                           compact=True).pack(anchor='e')
         tabs = ttk.Notebook(page)
-        tabs.pack(fill='both', expand=True, pady=(10, 0))
+        tabs.pack(fill='both', expand=True, pady=(6, 0))
         self.chat_views = {}
         for index, name in self.chat_channel_names().items():
             frame = tk.Frame(tabs, bg=THEME['panel'], padx=10, pady=10)
@@ -541,6 +544,13 @@ class SitdownApp:
             box = self.page_text(frame, self.chat_log.render(index, name))
             box.see('end')
             self.chat_views[index] = (name, box)
+
+    def clear_chat_history(self):
+        if messagebox.askyesno('Clear chat history?', 'Delete saved chat messages for every channel '
+                               'on this computer? Messages on the mesh are not affected.', parent=self.root):
+            self.chat_log.clear()
+            self.refresh_chat_views()
+            self.log('Chat history cleared.')
 
     def send_chat(self, index, name, draft):
         """Operator-initiated channel message; the same opt-in gate as other sends."""
