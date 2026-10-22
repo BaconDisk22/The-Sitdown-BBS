@@ -9,7 +9,7 @@ from collections import Counter
 from threading import Lock
 from sitdown_mqtt_event_queue import MQTTEventQueue
 from sitdown_mqtt_pipeline import MQTTMessagePipeline
-from sitdown_online import ActivityCounter
+from sitdown_online import ActivityCounter, topic_list
 
 NETWORKS = {
     'centralnj': ('mqtt_centralnj', 'mqtt.meshtastic.org'),
@@ -32,6 +32,16 @@ def topic_allowed(topic):
     return (parts[-1] == '+' and '+' not in ''.join(parts[:-1])
             and len(parts) >= 6 and parts[0] == 'msh'
             and parts[-4:-2] == ['2', 'e'] and all(parts[:-1]))
+
+
+MAX_TOPICS = 4
+
+
+def topics_allowed(value):
+    """1–4 distinct comma-separated topics, each passing topic_allowed."""
+    topics = topic_list(value)
+    return (0 < len(topics) <= MAX_TOPICS and len(set(topics)) == len(topics)
+            and all(topic_allowed(topic) for topic in topics))
 
 
 def network_config(source, network):
@@ -109,7 +119,7 @@ class DualMQTTMonitors:
             monitor.status = 'Disabled — enable profile first'
             return False
         topic = monitor.config.get('mqtt_monitor', 'topic', fallback='').strip()
-        if not topic_allowed(topic):
+        if not topics_allowed(topic):
             monitor.status = 'Disabled — explicit narrow topic required'
             return False
         host = monitor.config.get('mqtt_monitor', 'host', fallback='').strip()

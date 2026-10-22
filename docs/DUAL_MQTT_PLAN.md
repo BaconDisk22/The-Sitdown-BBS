@@ -13,6 +13,7 @@ TLS defaults on; port defaults to 8883. The manager refuses wildcard topics befo
 connecting, with one exception: a single trailing `+` in the gateway position of a
 named encrypted channel, such as `msh/US/2/e/CentralNJ/+`, which subscribes to that
 one channel from every gateway. `#`, any other `+`, and region-wide topics stay refused.
+A profile may list up to 4 such topics, comma-separated, to watch several channels on one broker.
 
 Next PR: independent Settings toggles, per-network auto-connect preferences,
 connect/disconnect controls, status and counters, and lifecycle wiring. An

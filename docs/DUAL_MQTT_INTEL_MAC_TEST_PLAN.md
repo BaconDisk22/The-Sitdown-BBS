@@ -6,7 +6,7 @@ These desktop MQTT sessions are **receive-only activity monitors**, not a two-wa
 - Build and launch the current Intel Mac release candidate.
 - Save separate broker hostname, port, TLS setting, authorized exact topic and credentials for each network in Settings. Never put credentials in an issue, screenshot, or CI log.
 - Leave both profiles disabled unless you are authorized to subscribe.
-- Use only the narrowest authorized topic: an exact topic, or one channel from every gateway (`msh/<region>/2/e/<channel>/+`). No other wildcards.
+- Use only the narrowest authorized topics: up to 4 comma-separated entries, each an exact topic or one channel from every gateway (`msh/<region>/2/e/<channel>/+`), e.g. `msh/US/2/e/SJMesh/+, msh/US/2/e/LongFast/+`. No other wildcards.
 - Do not enable auto-connect until manual connectivity is verified.
 
 ## Manual connection
