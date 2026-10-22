@@ -59,7 +59,8 @@ class LocalUtilities:
 
     def channels(self):
         channels = getattr(getattr(self.interface, 'localNode', None), 'channels', [])
-        return [{'index': i, 'name': ch.settings.name or f'Channel {i}'}
+        # Meshtastic leaves the default primary channel's name blank.
+        return [{'index': i, 'name': ch.settings.name or ('Primary' if i == 0 else f'Channel {i}')}
                 for i, ch in enumerate(channels) if ch.role != 0]
 
     def is_admin(self, sender):

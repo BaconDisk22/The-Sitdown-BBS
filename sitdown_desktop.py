@@ -61,7 +61,7 @@ class SitdownApp:
         self.restart_at = None
         self.retry_count = 0
         self.auto_restart = tk.BooleanVar(value=False)
-        self.node_count = tk.StringVar(value='Observed nodes: 0')
+        self.node_count = tk.StringVar(value='Known nodes: 0')
         self.uptime = tk.StringVar(value='Uptime: 0s')
         self.radio_activity = tk.StringVar(value='Radio activity: Not observed')
         self.traffic = tk.StringVar(value='Messages observed: RX 0 / TX 0')
@@ -510,7 +510,7 @@ class SitdownApp:
                  if isinstance(ch, dict) and isinstance(ch.get('index'), int)}
         for index in self.chat_log.channels():
             names.setdefault(index, f'Channel {index}')
-        return dict(sorted(names.items())) or {0: 'Primary channel'}
+        return dict(sorted(names.items())) or {0: 'Primary'}
 
     def chat_page(self, page):
         tk.Label(page, text='Channel chat heard by your BBS radio — receive-only for now.\n'
@@ -1129,6 +1129,7 @@ class SitdownApp:
                 elif kind == "control":
                     if value.get('type') == 'snapshot':
                         self.snapshot = value
+                        self.node_count.set(f"Known nodes: {len(value.get('nodes') or [])}")
                     elif value.get('type') == 'chat':
                         self.chat_log.add(value)
                     else:
@@ -1136,8 +1137,6 @@ class SitdownApp:
                         self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
                 elif kind == "link_error":
                     self.link_warning.set(explain_transport_error(value, self.connection.get()))
-                elif kind == "node":
-                    self.node_count.set(f"Observed nodes: {len(monitor.nodes)}")
             if hasattr(self, "traffic"):
                 self.traffic.set(f"Messages observed: RX {monitor.rx_count} / TX {monitor.tx_count}")
             if monitor.running:
@@ -1206,7 +1205,7 @@ class SitdownApp:
             f"Mode: {'Demo (no radio)' if self.demo.get() else self.connection.get().upper()}",
             f"Endpoint: {self.address.get().strip() or '(default)'}",
             f"Server process running: {bool(monitor and monitor.running)}",
-            f"Observed nodes: {len(monitor.nodes) if monitor else 0}",
+            f"Known nodes (radio database): {len(self.snapshot.get('nodes') or [])}",
             f"Uptime: {monitor.uptime_seconds() if monitor else 0}s",
             f"Radio activity: {self.radio_activity.get()}",
             f"Observed RX/TX: {monitor.rx_count if monitor else 0}/{monitor.tx_count if monitor else 0}",
