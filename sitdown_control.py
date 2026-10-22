@@ -56,9 +56,9 @@ def handle(service, request):
         if action == 'announce':
             result = service.announce(request.get('channel'), request.get('text', ''), local=True)
         elif action == 'chat':
-            event = service.chat_send(request.get('channel'), request.get('text', ''))
+            event = service.chat_send(request.get('channel'), request.get('text', ''), on_status=emit)
             return {'type': 'result', 'action': action,
-                    'text': 'Chat message submitted to radio (delivery unconfirmed).', 'chat': event}
+                    'text': 'Chat message submitted to radio; waiting for a relay.', 'chat': event}
         elif action == 'weather':
             result = service.weather.report()
         elif action == 'snapshot':

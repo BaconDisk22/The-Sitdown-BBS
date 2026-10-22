@@ -3,10 +3,11 @@ import configparser
 import logging
 import re
 import threading
+from meshtastic.protobuf import portnums_pb2
 from sitdown_personality import Personality
 from sitdown_online import WeatherDesk, ActivityCounter
 from sitdown_broadcasts import BroadcastStore
-from sitdown_chat import BROADCAST, ChatSendLimiter, sent_event
+from sitdown_chat import BROADCAST, ChatSendLimiter, routing_status, sent_event
 
 
 def node_id(value):
@@ -88,19 +89,35 @@ class LocalUtilities:
                                     channelIndex=channel, wantAck=False, wantResponse=False)
         return 'Announcement submitted to radio (delivery unconfirmed).'
 
-    def chat_send(self, channel, text):
-        """Send one operator chat message to a channel; local desktop only."""
+    def chat_send(self, channel, text, on_status=None):
+        """Send one operator chat message to a channel; local desktop only.
+
+        on_status(event) receives a chat_status event when the radio reports the
+        message relayed by a neighbour (implicit ACK) or not relayed (NAK).
+        """
         self.validate_announcement(channel, text, local=True)
         with self.lock:
             limiter = self.__dict__.setdefault('chat_limiter', ChatSendLimiter())
             if not limiter.reserve():
                 raise ValueError('Slow down: chat allows one message every 2 seconds and 6 per minute.')
-            self.interface.sendText(text=text, destinationId=BROADCAST,
-                                    channelIndex=channel, wantAck=False, wantResponse=False)
+            reply = {}
+
+            def on_response(packet):
+                status, reason = routing_status(packet)
+                if on_status is not None and reply.get('id'):
+                    on_status({'type': 'chat_status', 'id': reply['id'], 'status': status, 'reason': reason})
+
+            # ackPermitted: the library only passes ACKs (not just NAKs) to onResponse when asked.
+            packet = self.interface.sendData(text.encode('utf-8'), destinationId=BROADCAST,
+                                             portNum=portnums_pb2.PortNum.TEXT_MESSAGE_APP, wantAck=True,
+                                             onResponse=on_response, onResponseAckPermitted=True,
+                                             channelIndex=channel)
+            packet_id = getattr(packet, 'id', 0)
+            reply['id'] = packet_id if isinstance(packet_id, int) else 0
         info = getattr(self.interface, 'myInfo', None)
         number = getattr(info, 'my_node_num', None)
         sender = f'!{number:08x}' if isinstance(number, int) else 'this radio'
-        return sent_event(channel, text, sender)
+        return sent_event(channel, text, sender, packet_id=reply['id'])
 
     def schedule(self, when, channel, text, *, sender=None, local=False):
         self.validate_announcement(channel, text, sender=sender, local=local)

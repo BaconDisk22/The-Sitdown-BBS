@@ -39,6 +39,7 @@ def service():
     channel = lambda name: SimpleNamespace(role=1, settings=SimpleNamespace(name=name))
     svc.interface = Mock(localNode=SimpleNamespace(channels=[channel(''), channel('CentralNJ')]),
                          myInfo=SimpleNamespace(my_node_num=0x0000beef))
+    svc.interface.sendData.return_value = SimpleNamespace(id=4242)
     return svc
 
 
@@ -46,10 +47,13 @@ class ServerSendTests(unittest.TestCase):
     def test_sends_broadcast_on_channel_and_returns_echo(self):
         svc = service()
         event = svc.chat_send(1, 'Ayyy CentralNJ')
-        svc.interface.sendText.assert_called_once_with(text='Ayyy CentralNJ', destinationId=BROADCAST,
-                                                       channelIndex=1, wantAck=False, wantResponse=False)
-        self.assertEqual((event['channel'], event['from'], event['mine'], event['text']),
-                         (1, '!0000beef', True, 'Ayyy CentralNJ'))
+        args, kwargs = svc.interface.sendData.call_args
+        self.assertEqual(args, ('Ayyy CentralNJ'.encode(),))
+        self.assertEqual({k: kwargs[k] for k in ('destinationId', 'channelIndex', 'wantAck', 'onResponseAckPermitted')},
+                         {'destinationId': BROADCAST, 'channelIndex': 1, 'wantAck': True, 'onResponseAckPermitted': True})
+        self.assertEqual(kwargs['portNum'], 1)       # TEXT_MESSAGE_APP
+        self.assertEqual((event['channel'], event['from'], event['mine'], event['text'], event['id'], event['status']),
+                         (1, '!0000beef', True, 'Ayyy CentralNJ', 4242, 'sending'))
 
     def test_rejects_bad_channel_empty_and_oversized_text(self):
         svc = service()
@@ -57,14 +61,14 @@ class ServerSendTests(unittest.TestCase):
             with self.subTest(channel=channel, text=text[:5]):
                 with self.assertRaises(ValueError):
                     svc.chat_send(channel, text)
-        svc.interface.sendText.assert_not_called()
+        svc.interface.sendData.assert_not_called()
 
     def test_rate_limit_blocks_rapid_second_send(self):
         svc = service()
         svc.chat_send(0, 'one')
         with self.assertRaisesRegex(ValueError, 'Slow down'):
             svc.chat_send(0, 'two')
-        self.assertEqual(svc.interface.sendText.call_count, 1)
+        self.assertEqual(svc.interface.sendData.call_count, 1)
 
     def test_control_action_returns_result_with_echo_or_error(self):
         svc = service()
