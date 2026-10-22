@@ -329,6 +329,25 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertIn('Ayyy from CentralNJ', central)
         self.assertNotIn('Ayyy from CentralNJ', longfast)
 
+    def test_chat_tabs_have_compose_box_and_byte_counter(self):
+        from tkinter import ttk
+        self.app.snapshot = {**self.app.snapshot, 'channels': [{'index': 0, 'name': 'Primary'},
+                                                               {'index': 1, 'name': 'CentralNJ'}]}
+        self.app.select_page('CHAT')
+        self.root.update()
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        widgets = list(descendants(self.app.active_page))
+        self.assertEqual(len([w for w in widgets if isinstance(w, ttk.Entry)]), 2)
+        self.assertEqual(len([w for w in widgets if isinstance(w, tk.Label) and w.cget('text') == 'SEND']), 2)
+        entry = next(w for w in widgets if isinstance(w, ttk.Entry))
+        entry.insert(0, 'Ayyy é')
+        self.root.update()
+        self.assertTrue(any(isinstance(w, tk.Label) and w.cget('textvariable') and
+                            self.root.globalgetvar(w.cget('textvariable')) == '7/200 bytes' for w in widgets))
+
     def test_settings_save_preserves_existing_config_and_validates(self):
         path = Path(self.directory.name) / 'config.ini'
         path.write_text('[interface]\ntype = tcp\nhostname = 192.0.2.10\n[menu]\nmain_menu_items = B,X\n')

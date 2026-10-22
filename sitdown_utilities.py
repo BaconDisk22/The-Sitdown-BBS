@@ -6,6 +6,7 @@ import threading
 from sitdown_personality import Personality
 from sitdown_online import WeatherDesk, ActivityCounter
 from sitdown_broadcasts import BroadcastStore
+from sitdown_chat import BROADCAST, ChatSendLimiter, sent_event
 
 
 def node_id(value):
@@ -85,6 +86,20 @@ class LocalUtilities:
             self.interface.sendText(text=text, destinationId=0xffffffff,
                                     channelIndex=channel, wantAck=False, wantResponse=False)
         return 'Announcement submitted to radio (delivery unconfirmed).'
+
+    def chat_send(self, channel, text):
+        """Send one operator chat message to a channel; local desktop only."""
+        self.validate_announcement(channel, text, local=True)
+        with self.lock:
+            limiter = self.__dict__.setdefault('chat_limiter', ChatSendLimiter())
+            if not limiter.reserve():
+                raise ValueError('Slow down: chat allows one message every 2 seconds and 6 per minute.')
+            self.interface.sendText(text=text, destinationId=BROADCAST,
+                                    channelIndex=channel, wantAck=False, wantResponse=False)
+        info = getattr(self.interface, 'myInfo', None)
+        number = getattr(info, 'my_node_num', None)
+        sender = f'!{number:08x}' if isinstance(number, int) else 'this radio'
+        return sent_event(channel, text, sender)
 
     def schedule(self, when, channel, text, *, sender=None, local=False):
         self.validate_announcement(channel, text, sender=sender, local=local)

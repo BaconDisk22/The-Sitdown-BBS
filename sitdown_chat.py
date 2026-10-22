@@ -1,8 +1,8 @@
-"""Receive-only radio channel chat for the desktop.
+"""Radio channel chat for the desktop.
 
 Channel (broadcast) text messages heard by the BBS radio are passed to the
 desktop for display. Direct messages stay with the BBS command handler.
-Nothing here transmits.
+Sending is operator-initiated only, gated on the desktop and rate limited here.
 """
 import time
 from collections import deque
@@ -31,6 +31,31 @@ def chat_event(packet, interface, clock=time.time):
     return {'type': 'chat', 'channel': channel, 'from': sender,
             'short': str(user.get('shortName', '')), 'long': str(user.get('longName', '')),
             'text': text, 'rx_time': int(packet.get('rxTime') or clock()), 'mine': mine}
+
+
+class ChatSendLimiter:
+    """At least min_gap seconds between sends and at most per_minute in any minute."""
+
+    def __init__(self, min_gap=2.0, per_minute=6, clock=time.monotonic):
+        self.min_gap, self.per_minute, self.clock = min_gap, per_minute, clock
+        self._sent = deque()
+
+    def reserve(self):
+        now = self.clock()
+        while self._sent and now - self._sent[0] >= 60:
+            self._sent.popleft()
+        if self._sent and now - self._sent[-1] < self.min_gap:
+            return False
+        if len(self._sent) >= self.per_minute:
+            return False
+        self._sent.append(now)
+        return True
+
+
+def sent_event(channel, text, sender, clock=time.time):
+    """The operator's own message, echoed into the chat log once the radio accepted it."""
+    return {'type': 'chat', 'channel': channel, 'from': sender, 'short': '', 'long': '',
+            'text': text, 'rx_time': int(clock()), 'mine': True}
 
 
 def format_message(event):
@@ -67,8 +92,8 @@ class ChatLog:
 
     def render(self, channel, name):
         rows = self.messages(channel)
-        header = (f'{name} — channel messages your radio heard this session (last {len(rows)}).\n'
-                  'Receive-only for now. Direct messages to the BBS are handled by the BBS.\n\n')
+        header = (f'{name} — channel messages this session (last {len(rows)}).\n'
+                  'Direct messages to the BBS are handled by the BBS.\n\n')
         if not rows:
             return header + 'No messages yet. Start the BBS server to listen on this channel.'
         return header + '\n'.join(format_message(row) for row in rows)

@@ -57,6 +57,7 @@ class SitdownApp:
         self.wire_views = {}
         self.chat_log = ChatLog()
         self.chat_views = {}
+        self.chat_confirmed = set()
         self.supervisor = None
         self.restart_at = None
         self.retry_count = 0
@@ -513,8 +514,10 @@ class SitdownApp:
         return dict(sorted(names.items())) or {0: 'Primary channel'}
 
     def chat_page(self, page):
-        tk.Label(page, text='Channel chat heard by your BBS radio — receive-only for now.\n'
-                 'The BBS keeps answering direct-message commands. History lasts for this session.',
+        sending = ('Sending is ON for this session.' if self.centralnj_send_enabled.get() else
+                   "Sending is OFF — turn on 'Allow operator send preflight' in Settings to send.")
+        tk.Label(page, text='Channel chat on your BBS radio. The BBS keeps answering direct-message '
+                 'commands.\n' + sending + ' History lasts for this session.',
                  bg=THEME['background'], fg=THEME['text'], justify='left').pack(anchor='w')
         tabs = ttk.Notebook(page)
         tabs.pack(fill='both', expand=True, pady=(10, 0))
@@ -522,9 +525,40 @@ class SitdownApp:
         for index, name in self.chat_channel_names().items():
             frame = tk.Frame(tabs, bg=THEME['panel'], padx=10, pady=10)
             tabs.add(frame, text=name)
+            compose = tk.Frame(frame, bg=THEME['panel'])
+            compose.pack(side='bottom', fill='x', pady=(6, 0))
+            draft = tk.StringVar()
+            counter = tk.StringVar(value='0/200 bytes')
+            entry = ttk.Entry(compose, textvariable=draft, style='Desk.TEntry')
+            send = lambda _event=None, i=index, n=name, d=draft: self.send_chat(i, n, d)
+            self.styled_button(compose, 'SEND', send, THEME['primary'], compact=True).pack(side='right', padx=(6, 0))
+            tk.Label(compose, textvariable=counter, bg=THEME['panel'], fg=THEME['highlight']).pack(side='right', padx=6)
+            entry.pack(side='left', fill='x', expand=True)
+            entry.bind('<Return>', send)
+            draft.trace_add('write', lambda *_, d=draft, c=counter: c.set(f"{len(d.get().encode('utf-8'))}/200 bytes"))
             box = self.page_text(frame, self.chat_log.render(index, name))
             box.see('end')
             self.chat_views[index] = (name, box)
+
+    def send_chat(self, index, name, draft):
+        """Operator-initiated channel message; the same opt-in gate as other sends."""
+        text = draft.get()
+        monitor = self.supervisor
+        radio_ready = bool(monitor and monitor.running and monitor.link_state == 'sdk_connected')
+        allowed, reason = send_preflight(enabled=self.centralnj_send_enabled.get(), confirmed=True,
+                                         radio_ready=radio_ready, demo_mode=self.demo.get(), message=text)
+        if not allowed:
+            self.show_info('Chat not sent', reason)
+            return False
+        if index not in self.chat_confirmed:
+            if not messagebox.askyesno(f'Send on {name}?',
+                                       f'Messages you send here go out over the radio to everyone on {name}.\n\n'
+                                       'Allow sending on this channel for the rest of this session?', parent=self.root):
+                return False
+            self.chat_confirmed.add(index)
+        self.control_request('chat', channel=index, text=text)
+        draft.set('')
+        return True
 
     def refresh_chat_views(self):
         """Redraw visible chat tabs whose text changed, keeping the reader near the newest line."""
@@ -1131,6 +1165,13 @@ class SitdownApp:
                         self.snapshot = value
                     elif value.get('type') == 'chat':
                         self.chat_log.add(value)
+                    elif value.get('action') == 'chat':
+                        if value.get('error'):
+                            self.log('Chat not sent: ' + value['error'])
+                            self.show_info('Chat not sent', value['error'])
+                        else:
+                            self.chat_log.add(value.get('chat') or {})
+                            self.log(value.get('text', 'Chat message submitted.'))
                     else:
                         self.log(value.get('error') or value.get('text', 'Operation complete.'))
                         self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
