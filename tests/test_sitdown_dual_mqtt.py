@@ -11,7 +11,7 @@ class FakeClient:
         self.stopped = False
 
     def username_pw_set(self, *args): pass
-    def tls_set(self): pass
+    def tls_set(self, **kwargs): pass
     def reconnect_delay_set(self, **kwargs): pass
     def connect_async(self, host, port, keepalive):
         self.connected.append((host, port))

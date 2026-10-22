@@ -9,7 +9,7 @@ class FakeClient:
         self.started = 0
         self.stopped = 0
         self.disconnected = 0
-    def tls_set(self): pass
+    def tls_set(self, **kwargs): pass
     def reconnect_delay_set(self, **kwargs): pass
     def connect_async(self, host, port, keepalive): pass
     def loop_start(self): self.started += 1

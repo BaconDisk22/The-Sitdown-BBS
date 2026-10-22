@@ -31,7 +31,7 @@ class TopicPolicyTests(unittest.TestCase):
         subscribed = []
         class Client:
             def username_pw_set(self, *a): pass
-            def tls_set(self): pass
+            def tls_set(self, **kwargs): pass
             def reconnect_delay_set(self, **k): pass
             def connect_async(self, *a): pass
             def loop_start(self): pass

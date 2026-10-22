@@ -8,10 +8,16 @@ import time
 from sitdown_mqtt_recovery_state import RecoveryState
 from urllib.parse import urlencode
 from urllib.request import urlopen
+from sitdown_tls import ca_file, ssl_context
+
+
+def https_open(url, timeout):
+    """urlopen with a CA list that exists inside the packaged app."""
+    return urlopen(url, timeout=timeout, context=ssl_context())
 
 
 class WeatherDesk:
-    def __init__(self, config, opener=urlopen, clock=time.monotonic):
+    def __init__(self, config, opener=https_open, clock=time.monotonic):
         self.config, self.opener, self.clock = config, opener, clock
         self.cached = None
         self.checked = None
@@ -99,7 +105,7 @@ class ActivityCounter:
                 client.username_pw_set(username, c.get('mqtt_monitor', 'password', fallback=''))
             tls = c.getboolean('mqtt_monitor', 'tls', fallback=True)
             if tls:
-                client.tls_set()
+                client.tls_set(ca_certs=ca_file())
             port = c.getint('mqtt_monitor', 'port', fallback=8883 if tls else 1883)
             client.reconnect_delay_set(min_delay=5, max_delay=120)
             self.status = 'Connecting'
