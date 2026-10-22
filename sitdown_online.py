@@ -65,6 +65,11 @@ class WeatherDesk:
                 return 'Internet weather unavailable.' + (' Local report: ' + local if local else '')
 
 
+def topic_list(value):
+    """Split a comma-separated topic setting into its non-empty entries."""
+    return [topic.strip() for topic in (value or '').split(',') if topic.strip()]
+
+
 class ActivityCounter:
     """Subscribe-only counter; never forwards MQTT payloads to a radio."""
     def __init__(self, config, sink=None):
@@ -88,7 +93,7 @@ class ActivityCounter:
                 return
             host = c.get('mqtt_monitor', 'host', fallback='').strip()
             self.topic = c.get('mqtt_monitor', 'topic', fallback='').strip()
-            if not host or not self.topic:
+            if not host or not topic_list(self.topic):
                 raise ValueError('Configure host and topic explicitly')
             if factory is None:
                 import paho.mqtt.client as mqtt
@@ -119,8 +124,9 @@ class ActivityCounter:
     def _connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
             self.recovery.connected()
-            result, _ = client.subscribe(self.topic)
-            self.status = 'Subscription requested (not yet confirmed)' if result == 0 else 'Subscription failed'
+            results = [client.subscribe(topic)[0] for topic in topic_list(self.topic)]
+            self.status = ('Subscription requested (not yet confirmed)' if results and all(r == 0 for r in results)
+                           else 'Subscription failed')
         else:
             self.status = 'Connection refused'
 

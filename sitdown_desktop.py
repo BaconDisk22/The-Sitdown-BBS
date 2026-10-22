@@ -657,8 +657,8 @@ class SitdownApp:
             'announcements': [('admin_nodes', 'Remote administrator node IDs (comma separated)', '')],
             'weather': [('internet_enabled', 'Enable internet weather', 'bool'), ('local_report', 'Offline report (include time)', ''), ('latitude', 'Latitude', '40.20'), ('longitude', 'Longitude', '-74.50')],
             'mqtt_monitor': [('enabled', 'Enable MQTT counter', 'bool'), ('host', 'Broker hostname', ''), ('topic', 'Subscription topic', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
-            'mqtt_centralnj': [('enabled', 'Enable CentralNJ monitor', 'bool'), ('auto_connect', 'Auto-connect CentralNJ at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.meshtastic.org'), ('topic', 'Topic: exact, or msh/<region>/2/e/<channel>/+', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
-            'mqtt_sjmesh': [('enabled', 'Enable SJMesh monitor', 'bool'), ('auto_connect', 'Auto-connect SJMesh at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.sjmesh.net'), ('topic', 'Topic: exact, or msh/<region>/2/e/<channel>/+', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_centralnj': [('enabled', 'Enable CentralNJ monitor', 'bool'), ('auto_connect', 'Auto-connect CentralNJ at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.meshtastic.org'), ('topic', 'Topics (up to 4, comma-separated): exact, or msh/<region>/2/e/<channel>/+', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
+            'mqtt_sjmesh': [('enabled', 'Enable SJMesh monitor', 'bool'), ('auto_connect', 'Auto-connect SJMesh at startup', 'bool'), ('host', 'Broker hostname', 'mqtt.sjmesh.net'), ('topic', 'Topics (up to 4, comma-separated): exact, or msh/<region>/2/e/<channel>/+', ''), ('tls', 'Use TLS', 'bool_true'), ('port', 'Port', '8883'), ('username', 'Username', ''), ('password', 'Password', '')],
             'personality': [('public_mode', 'Public greeting: clean / attitude / uncensored', 'clean'), ('allow_public_profanity', 'Allow profanity in generated public greetings', 'bool')],
         }
         for section, entries in sections.items():
@@ -705,10 +705,10 @@ class SitdownApp:
                         if not config.get(section, 'host', fallback='').strip():
                             raise ValueError(f'{section}: broker hostname is required.')
                         topic = config.get(section, 'topic', fallback='').strip()
-                        from sitdown_dual_mqtt import topic_allowed
-                        if not topic_allowed(topic):
-                            raise ValueError(f'{section}: use an exact topic, or msh/<region>/2/e/<channel>/+ '
-                                             'for every gateway on one channel. No other wildcards.')
+                        from sitdown_dual_mqtt import topics_allowed
+                        if not topics_allowed(topic):
+                            raise ValueError(f'{section}: use 1–4 different comma-separated topics, each exact or '
+                                             'msh/<region>/2/e/<channel>/+ for one channel. No other wildcards.')
                         if not 1 <= config.getint(section, 'port') <= 65535:
                             raise ValueError(f'{section}: port must be 1–65535.')
                 path = self.config_path()
