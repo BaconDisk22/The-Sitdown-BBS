@@ -348,6 +348,38 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertTrue(any(isinstance(w, tk.Label) and w.cget('textvariable') and
                             self.root.globalgetvar(w.cget('textvariable')) == '7/200 bytes' for w in widgets))
 
+    def test_unread_counts_on_chat_button_and_tabs(self):
+        from sitdown_chat import BROADCAST, chat_event
+        from types import SimpleNamespace
+        iface = SimpleNamespace(myInfo=SimpleNamespace(my_node_num=1), nodes={})
+        def heard(text, channel, sender=0x02ed8680):
+            return chat_event({'from': sender, 'fromId': f'!{sender:08x}', 'to': BROADCAST, 'channel': channel,
+                               'rxTime': 1792616310, 'decoded': {'portnum': 'TEXT_MESSAGE_APP',
+                                                                 'payload': text.encode()}}, iface)
+        chat = next(b for b in self.app.nav_buttons if b.page_name == 'CHAT')
+        self.app.snapshot = {**self.app.snapshot, 'channels': [{'index': 0, 'name': 'Primary'},
+                                                               {'index': 1, 'name': 'CentralNJ'}]}
+        for text in ('one', 'two'):                       # CHAT closed: everything is unread
+            self.app.chat_log.add(heard(text, 1))
+            self.app.note_chat_message(heard(text, 1))
+        self.assertTrue(chat.cget('text').endswith('CHAT (2)'))
+        self.app.select_page('CHAT')                      # opens on Primary; CentralNJ still unread
+        self.root.update()
+        tabs = self.app.chat_tabs
+        self.assertEqual(tabs.tab(self.app.chat_tab_frames[1], 'text'), 'CentralNJ (2)')
+        self.assertEqual(chat.cget('bg'), self.app.colors['primary'])   # still highlighted with a count
+        self.app.note_chat_message(heard('on screen', 0))                # visible tab: not counted
+        self.app.note_chat_message({**heard('mine', 1), 'mine': True})   # own message: not counted
+        self.assertEqual(self.app.chat_unread[1], 2)
+        tabs.select(self.app.chat_tab_frames[1])
+        self.root.update()
+        self.assertEqual(tabs.tab(self.app.chat_tab_frames[1], 'text'), 'CentralNJ')
+        self.assertEqual(chat.cget('text'), chat.base_text)
+        self.app.select_page('HOME')
+        self.root.update()
+        self.app.note_chat_message(heard('later', 1))
+        self.assertTrue(chat.cget('text').endswith('CHAT (1)'))
+
     def test_settings_save_preserves_existing_config_and_validates(self):
         path = Path(self.directory.name) / 'config.ini'
         path.write_text('[interface]\ntype = tcp\nhostname = 192.0.2.10\n[menu]\nmain_menu_items = B,X\n')

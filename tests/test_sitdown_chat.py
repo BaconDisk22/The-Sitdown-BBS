@@ -118,12 +118,14 @@ class DesktopRoutingTests(unittest.TestCase):
         app.dual_mqtt = None
         app.wire_views = {}
         app.chat_views = {}
+        app.chat_unread, app.chat_tabs, app.chat_tab_frames, app.nav_buttons = desktop.Counter(), None, {}, []
         app.update_centralnj_status = Mock()
         app.auto_restart = Mock(get=Mock(return_value=False))
         app.demo = Mock(get=Mock(return_value=False))
         app.root = Mock(winfo_exists=Mock(return_value=False))
         app.poll()
         self.assertEqual(app.chat_log.messages(1)[0]['text'], 'Ayyy')
+        self.assertEqual(app.chat_unread[1], 1)
         app.show_info.assert_not_called()
 
     def test_channel_names_come_from_snapshot_and_history(self):
