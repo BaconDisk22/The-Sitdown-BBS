@@ -2,6 +2,7 @@
 """The Sitdown BBS desktop launcher. Standard-library Tkinter GUI."""
 import json
 import queue
+from collections import Counter
 import threading
 from sitdown_radio_preflight import check_radio
 from sitdown_send_preflight import send_preflight
@@ -60,6 +61,9 @@ class SitdownApp:
         self.chat_log = ChatLog(path=CONFIG.with_name('chat-history.json'))
         self.chat_views = {}
         self.chat_confirmed = set()
+        self.chat_unread = Counter()
+        self.chat_tabs = None
+        self.chat_tab_frames = {}
         self.supervisor = None
         self.restart_at = None
         self.retry_count = 0
@@ -179,6 +183,8 @@ class SitdownApp:
                 navigation, title, action,
                 c["primary"] if "HOME" in title else c["panel"],
                 compact=True)
+            # Labels can gain an unread count, so pages are matched by name, not label text.
+            control.page_name, control.base_text = title.split()[-1], title
             self.nav_buttons.append(control)
         navigation.bind("<Configure>", self.layout_navigation)
         self.page_host = tk.Frame(self.root, bg=c['background'])
@@ -375,7 +381,7 @@ class SitdownApp:
 
     def select_page(self, title):
         for button in self.nav_buttons:
-            button.configure(bg=self.colors['primary'] if button.cget('text').split()[-1] == title else self.colors['background'])
+            button.configure(bg=self.colors['primary'] if button.page_name == title else self.colors['background'])
         if self.active_page is not None:
             self.active_page.destroy()
             self.active_page = None
@@ -527,9 +533,11 @@ class SitdownApp:
         tabs = ttk.Notebook(page)
         tabs.pack(fill='both', expand=True, pady=(6, 0))
         self.chat_views = {}
+        self.chat_tabs, self.chat_tab_frames = tabs, {}
         for index, name in self.chat_channel_names().items():
             frame = tk.Frame(tabs, bg=THEME['panel'], padx=10, pady=10)
             tabs.add(frame, text=name)
+            self.chat_tab_frames[index] = frame
             compose = tk.Frame(frame, bg=THEME['panel'])
             compose.pack(side='bottom', fill='x', pady=(6, 0))
             draft = tk.StringVar()
@@ -544,6 +552,39 @@ class SitdownApp:
             box = self.page_text(frame, self.chat_log.render(index, name))
             box.see('end')
             self.chat_views[index] = (name, box)
+        tabs.bind('<<NotebookTabChanged>>', lambda _event: self.mark_visible_chat_read())
+        self.mark_visible_chat_read()
+
+    def visible_chat_channel(self):
+        """The channel whose tab is on screen, or None when the CHAT page is closed."""
+        tabs = self.chat_tabs
+        if tabs is None or not tabs.winfo_exists():
+            return None
+        selected = tabs.select()
+        return next((i for i, frame in self.chat_tab_frames.items() if str(frame) == selected), None)
+
+    def note_chat_message(self, event):
+        """Count a heard message as unread unless it is ours or its tab is on screen."""
+        if not event.get('mine') and event.get('channel') != self.visible_chat_channel():
+            self.chat_unread[event['channel']] += 1
+            self.update_unread_labels()
+
+    def mark_visible_chat_read(self):
+        channel = self.visible_chat_channel()
+        if channel is not None:
+            self.chat_unread.pop(channel, None)
+        self.update_unread_labels()
+
+    def update_unread_labels(self):
+        total = sum(self.chat_unread.values())
+        for button in getattr(self, 'nav_buttons', []):
+            if button.page_name == 'CHAT':
+                button.configure(text=button.base_text + (f' ({total})' if total else ''))
+        tabs = self.chat_tabs
+        if tabs is not None and tabs.winfo_exists():
+            for index, (name, _box) in self.chat_views.items():
+                count = self.chat_unread.get(index, 0)
+                tabs.tab(self.chat_tab_frames[index], text=name + (f' ({count})' if count else ''))
 
     def clear_chat_history(self):
         if messagebox.askyesno('Clear chat history?', 'Delete saved chat messages for every channel '
@@ -1177,7 +1218,8 @@ class SitdownApp:
                         self.snapshot = value
                         self.node_count.set(f"Known nodes: {len(value.get('nodes') or [])}")
                     elif value.get('type') == 'chat':
-                        self.chat_log.add(value)
+                        if self.chat_log.add(value):
+                            self.note_chat_message(value)
                     elif value.get('action') == 'chat':
                         if value.get('error'):
                             self.log('Chat not sent: ' + value['error'])
