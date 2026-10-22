@@ -25,6 +25,7 @@ from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
 from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS, format_stats
 from sitdown_chat import ChatLog
+from sitdown_version import VERSION
 from sitdown_personality import Personality
 import zipfile
 
@@ -312,6 +313,7 @@ class SitdownApp:
         self.output.tag_configure("event_error", foreground="#FF8B85")
         self.output.tag_configure("event_ready", foreground="#27ff3d")
         self.log(Personality(self.desktop_mouth.get(), self.public_mouth.get(), self.public_profanity.get()).message("welcome"))
+        self.log(f"The Sitdown BBS {VERSION}")
         self.log("Pick a radio, or check Demo mode.")
 
     def update_centralnj_status(self, radio_state='unverified', mqtt_state='disabled'):
@@ -935,7 +937,7 @@ class SitdownApp:
     def show_about(self):
         self.show_info(
             "About The Sitdown BBS",
-            "THE SITDOWN BBS — North Jersey Communications Division\n"
+            f"THE SITDOWN BBS {VERSION} — North Jersey Communications Division\n"
             "Jersey-themed Meshtastic bulletin board.\n"
             "Built for the mesh. Raised in Jersey.\n\n"
             "Original project: TC²-BBS by TheCommsChannel.\n"
@@ -1241,7 +1243,7 @@ class SitdownApp:
         """Copy useful local state; do not assert radio connectivity."""
         monitor = self.supervisor
         details = [
-            "The Sitdown BBS — local diagnostics",
+            f"The Sitdown BBS {VERSION} — local diagnostics",
             f"Process status: {self.status.get()}",
             f"Mode: {'Demo (no radio)' if self.demo.get() else self.connection.get().upper()}",
             f"Endpoint: {self.address.get().strip() or '(default)'}",
@@ -1365,6 +1367,7 @@ if __name__ == "__main__":
                     assert app.home_page.winfo_children(), 'Home dashboard controls disappeared'
             assert app.status.get() == 'Demo running — no radio'
             root.destroy()
+        print(f'SITDOWN_SMOKE_OK version={VERSION}', flush=True)
         sys.exit(0)
     if "--sitdown-server" in sys.argv:
         sys.argv.remove("--sitdown-server")
