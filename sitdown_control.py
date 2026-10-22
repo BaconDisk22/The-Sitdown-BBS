@@ -7,11 +7,16 @@ import threading
 from sitdown_utilities import lookup_nodes
 
 PREFIX = 'SITDOWN_EVENT '
+_emit_lock = threading.Lock()
 
 
 def emit(payload):
+    """Write one complete event line; safe from the radio receive thread too."""
     token = os.environ.get('SITDOWN_CONTROL_TOKEN', '')
-    print(PREFIX + token + ' ' + json.dumps(payload, default=_json_safe), flush=True)
+    line = PREFIX + token + ' ' + json.dumps(payload, default=_json_safe) + '\n'
+    with _emit_lock:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def _json_safe(value):

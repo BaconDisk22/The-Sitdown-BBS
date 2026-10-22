@@ -309,6 +309,26 @@ class DesktopWindowTests(unittest.TestCase):
             self.assertLessEqual(save.winfo_rooty() + save.winfo_height(),
                                  self.root.winfo_rooty() + self.root.winfo_height())
 
+    def test_chat_page_shows_messages_in_their_channel_tab_live(self):
+        from sitdown_chat import BROADCAST, chat_event
+        from types import SimpleNamespace
+        iface = SimpleNamespace(myInfo=SimpleNamespace(my_node_num=1), nodes={})
+        def heard(text, channel):
+            return chat_event({'from': 0x02ed8680, 'fromId': '!02ed8680', 'to': BROADCAST, 'channel': channel,
+                               'rxTime': 1792616310, 'decoded': {'portnum': 'TEXT_MESSAGE_APP',
+                                                                 'payload': text.encode()}}, iface)
+        self.app.snapshot = {**self.app.snapshot, 'channels': [{'index': 0, 'name': 'LongFast'},
+                                                               {'index': 1, 'name': 'CentralNJ'}]}
+        self.app.select_page('CHAT')
+        self.root.update()
+        self.assertEqual(sorted(self.app.chat_views), [0, 1])
+        self.app.chat_log.add(heard('Ayyy from CentralNJ', 1))
+        self.app.refresh_chat_views()
+        central = self.app.chat_views[1][1].get('1.0', 'end')
+        longfast = self.app.chat_views[0][1].get('1.0', 'end')
+        self.assertIn('Ayyy from CentralNJ', central)
+        self.assertNotIn('Ayyy from CentralNJ', longfast)
+
     def test_settings_save_preserves_existing_config_and_validates(self):
         path = Path(self.directory.name) / 'config.ini'
         path.write_text('[interface]\ntype = tcp\nhostname = 192.0.2.10\n[menu]\nmain_menu_items = B,X\n')

@@ -24,6 +24,7 @@ from sitdown_restore_preflight import inspect_backup_archive
 from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
 from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS, format_stats
+from sitdown_chat import ChatLog
 from sitdown_personality import Personality
 import zipfile
 
@@ -54,6 +55,8 @@ class SitdownApp:
         self.dual_mqtt = None
         self.mesh_feed = MeshFeed()
         self.wire_views = {}
+        self.chat_log = ChatLog()
+        self.chat_views = {}
         self.supervisor = None
         self.restart_at = None
         self.retry_count = 0
@@ -160,6 +163,7 @@ class SitdownApp:
         for title, action in [
             ("⌂  HOME", self.show_home),
             ("▣  BBS", self.commands),
+            ("✆  CHAT", lambda: self.select_page("CHAT")),
             ("✉  MESSAGES", lambda: self.show_command_info("/mail")),
             ("▤  BOARDS", lambda: self.show_command_info("/boards")),
             ("◉  RADIO", self.show_radio),
@@ -389,6 +393,8 @@ class SitdownApp:
             self.database_page(page, title)
         elif title == 'SETTINGS':
             self.integration_settings(page)
+        elif title == 'CHAT':
+            self.chat_page(page)
         elif title == 'RADIO':
             for variable in (self.status, self.connection_summary, self.radio_activity, self.node_count, self.uptime):
                 tk.Label(page, textvariable=variable, bg=THEME['background'], fg=THEME['text'],
@@ -497,6 +503,44 @@ class SitdownApp:
             except sqlite3.Error as exc:
                 text = 'Could not read the local database: ' + str(exc)
         self.page_text(page, 'Local operator view — latest 100 records, read only.\n\n' + text)
+
+    def chat_channel_names(self):
+        """Radio channels from the last snapshot plus any channel that has messages."""
+        names = {ch['index']: ch['name'] for ch in self.snapshot.get('channels', [])
+                 if isinstance(ch, dict) and isinstance(ch.get('index'), int)}
+        for index in self.chat_log.channels():
+            names.setdefault(index, f'Channel {index}')
+        return dict(sorted(names.items())) or {0: 'Primary channel'}
+
+    def chat_page(self, page):
+        tk.Label(page, text='Channel chat heard by your BBS radio — receive-only for now.\n'
+                 'The BBS keeps answering direct-message commands. History lasts for this session.',
+                 bg=THEME['background'], fg=THEME['text'], justify='left').pack(anchor='w')
+        tabs = ttk.Notebook(page)
+        tabs.pack(fill='both', expand=True, pady=(10, 0))
+        self.chat_views = {}
+        for index, name in self.chat_channel_names().items():
+            frame = tk.Frame(tabs, bg=THEME['panel'], padx=10, pady=10)
+            tabs.add(frame, text=name)
+            box = self.page_text(frame, self.chat_log.render(index, name))
+            box.see('end')
+            self.chat_views[index] = (name, box)
+
+    def refresh_chat_views(self):
+        """Redraw visible chat tabs whose text changed, keeping the reader near the newest line."""
+        for index, (name, box) in self.chat_views.items():
+            if not box.winfo_exists():
+                continue
+            text = self.chat_log.render(index, name)
+            if box.get('1.0', 'end-1c') == text:
+                continue
+            at_bottom = box.yview()[1] >= 0.999
+            box.configure(state='normal')
+            box.delete('1.0', 'end')
+            box.insert('1.0', text)
+            box.configure(state='disabled')
+            if at_bottom:
+                box.see('end')
 
     def render_wire(self, network):
         if self.dual_mqtt is None:
@@ -1085,6 +1129,8 @@ class SitdownApp:
                 elif kind == "control":
                     if value.get('type') == 'snapshot':
                         self.snapshot = value
+                    elif value.get('type') == 'chat':
+                        self.chat_log.add(value)
                     else:
                         self.log(value.get('error') or value.get('text', 'Operation complete.'))
                         self.show_info('The Sitdown', value.get('error') or value.get('text', 'Operation complete.'))
@@ -1110,6 +1156,7 @@ class SitdownApp:
                 self.supervisor = None
                 self.radio_activity.set("Radio activity: Process stopped")
         self.drain_mqtt_events()
+        self.refresh_chat_views()
         # Only SDK link events count as connected; MQTT monitor is read-only.
         radio_state = 'unverified'
         if monitor and monitor.running:
