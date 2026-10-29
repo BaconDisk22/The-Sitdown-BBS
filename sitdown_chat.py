@@ -167,16 +167,16 @@ class ChatLog:
         return True
 
     def set_status(self, packet_id, status, reason=''):
-        """Record the radio's reply for one of our sent messages; False if it is unknown."""
+        """Record the radio's reply for one of our sent messages; the updated message, or None."""
         if not isinstance(packet_id, int) or not packet_id or status not in STATUSES:
-            return False
+            return None
         for rows in self._messages.values():
             for event in reversed(rows):
                 if event.get('mine') and event.get('id') == packet_id:
                     event['status'], event['reason'] = status, str(reason or '')[:40]
                     self._save()
-                    return True
-        return False
+                    return event
+        return None
 
     def clear(self):
         self._messages = {}

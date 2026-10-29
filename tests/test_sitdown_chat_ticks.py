@@ -89,15 +89,14 @@ class LogStatusTests(unittest.TestCase):
 
 
 class DesktopStatusTests(unittest.TestCase):
-    def test_poll_applies_chat_status(self):
+    def poll_with(self, status, channels=()):
         app = desktop.SitdownApp.__new__(desktop.SitdownApp)
         app.chat_log = ChatLog()
-        app.chat_log.add(sent_event(1, 'hi', '!0000beef', packet_id=7))
-        status = {'type': 'chat_status', 'id': 7, 'status': 'relayed', 'reason': 'NONE'}
+        app.chat_log.add(sent_event(2, 'mic check 1-2- 1-2', '!0000beef', packet_id=7))
         app.supervisor = Mock(poll_events=Mock(return_value=[('control', status)]), running=False, stopping=True)
         for name in ('status', 'radio_activity', 'link_warning', 'traffic', 'uptime', 'node_count'):
             setattr(app, name, Mock())
-        app.snapshot = {'mqtt': {'status': 'Disabled'}}
+        app.snapshot = {'mqtt': {'status': 'Disabled'}, 'channels': list(channels)}
         app.restart_at = None
         app.preflight_results = Mock(get_nowait=Mock(side_effect=desktop.queue.Empty))
         app.dual_mqtt, app.wire_views, app.chat_views = None, {}, {}
@@ -105,10 +104,25 @@ class DesktopStatusTests(unittest.TestCase):
         app.auto_restart = Mock(get=Mock(return_value=False))
         app.demo = Mock(get=Mock(return_value=False))
         app.root = Mock(winfo_exists=Mock(return_value=False))
-        app.show_info = Mock()
+        app.show_info, app.log = Mock(), Mock()
         app.poll()
-        self.assertEqual(app.chat_log.messages(1)[0]['status'], 'relayed')
+        return app
+
+    def test_poll_applies_status_and_logs_relay(self):
+        app = self.poll_with({'type': 'chat_status', 'id': 7, 'status': 'relayed', 'reason': 'NONE'},
+                             channels=[{'index': 2, 'name': 'CentralNJ'}])
+        self.assertEqual(app.chat_log.messages(2)[0]['status'], 'relayed')
+        app.log.assert_called_once_with('Chat CentralNJ: ✓ relayed — "mic check 1-2- 1-2"')
         app.show_info.assert_not_called()
+
+    def test_failure_is_logged_with_reason(self):
+        app = self.poll_with({'type': 'chat_status', 'id': 7, 'status': 'failed', 'reason': 'MAX_RETRANSMIT'})
+        app.log.assert_called_once_with('Chat Channel 2: ✗ not relayed (MAX_RETRANSMIT) — "mic check 1-2- 1-2"')
+
+    def test_reply_for_unknown_message_logs_nothing(self):
+        app = self.poll_with({'type': 'chat_status', 'id': 999, 'status': 'relayed'})
+        app.log.assert_not_called()
+        self.assertEqual(app.chat_log.messages(2)[0]['status'], 'sending')
 
 
 if __name__ == '__main__':
