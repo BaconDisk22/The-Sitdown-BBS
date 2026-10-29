@@ -25,7 +25,7 @@ from sitdown_restore_preflight import inspect_backup_archive
 from sitdown_errors import explain_transport_error
 from sitdown_monitor import ServerSupervisor
 from sitdown_mqtt_feed import MeshFeed, NETWORK_LABELS, format_stats
-from sitdown_chat import ChatLog
+from sitdown_chat import ChatLog, status_label
 from sitdown_version import VERSION
 from sitdown_personality import Personality
 import zipfile
@@ -585,6 +585,12 @@ class SitdownApp:
             for index, (name, _box) in self.chat_views.items():
                 count = self.chat_unread.get(index, 0)
                 tabs.tab(self.chat_tab_frames[index], text=name + (f' ({count})' if count else ''))
+
+    def log_chat_status(self, sent):
+        """Server log line for the radio's reply to one of our chat messages."""
+        name = self.chat_channel_names().get(sent['channel'], f"Channel {sent['channel']}")
+        text = sent['text'] if len(sent['text']) <= 40 else sent['text'][:39] + '…'
+        self.log(f'Chat {name}: {status_label(sent)} — "{text}"')
 
     def clear_chat_history(self):
         if messagebox.askyesno('Clear chat history?', 'Delete saved chat messages for every channel '
@@ -1221,7 +1227,9 @@ class SitdownApp:
                         if self.chat_log.add(value):
                             self.note_chat_message(value)
                     elif value.get('type') == 'chat_status':
-                        self.chat_log.set_status(value.get('id'), value.get('status'), value.get('reason'))
+                        sent = self.chat_log.set_status(value.get('id'), value.get('status'), value.get('reason'))
+                        if sent is not None:
+                            self.log_chat_status(sent)
                     elif value.get('action') == 'chat':
                         if value.get('error'):
                             self.log('Chat not sent: ' + value['error'])
